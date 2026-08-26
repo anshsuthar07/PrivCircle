@@ -5,6 +5,7 @@ import {
   isValidRoomPath,
   normalizeRoomPath,
 } from "@/lib/validation";
+import { parseJoinPathInput } from "@/lib/path-policy";
 import { EXPIRATION_SECONDS } from "@/lib/types";
 
 describe("room input validation", () => {
@@ -21,6 +22,16 @@ describe("room input validation", () => {
     "accepts valid path %s",
     (path) => expect(isValidRoomPath(path)).toBe(true),
   );
+
+  it("accepts room paths and shared URLs for joining", () => {
+    expect(parseJoinPathInput(" Team_Dev-1 ")).toBe("team_dev-1");
+    expect(parseJoinPathInput("/team-dev/")).toBe("team-dev");
+    expect(parseJoinPathInput("https://privcircle.vercel.app/Secret-Room")).toBe(
+      "secret-room",
+    );
+    expect(parseJoinPathInput("https://privcircle.vercel.app/api")).toBeNull();
+    expect(parseJoinPathInput("../secret")).toBeNull();
+  });
 
   it("requires strong-enough optional passwords", () => {
     for (const password of ["short", "longenough", "long-enough", "12345678!"]) {

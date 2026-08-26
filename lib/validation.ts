@@ -5,17 +5,7 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
 } from "./password-policy";
-
-export const RESERVED_PATHS = new Set([
-  "api",
-  "ws",
-  "login",
-  "admin",
-  "settings",
-  "signin",
-  "signout",
-  "_next",
-]);
+export { isValidRoomPath, normalizeRoomPath, RESERVED_PATHS } from "./path-policy";
 
 const pathExpression = /^[a-zA-Z0-9_-]+$/;
 
@@ -42,20 +32,6 @@ export const createRoomSchema = z
 export const authRoomSchema = z.object({
   password: z.string().max(128),
 });
-
-export function normalizeRoomPath(value: string) {
-  return value.trim().toLowerCase();
-}
-
-export function isValidRoomPath(value: string) {
-  const normalized = normalizeRoomPath(value);
-  return (
-    normalized.length >= 3 &&
-    normalized.length <= 64 &&
-    pathExpression.test(normalized) &&
-    !RESERVED_PATHS.has(normalized)
-  );
-}
 
 export function generateRoomPath(length = 12) {
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
