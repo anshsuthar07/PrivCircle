@@ -1,0 +1,10 @@
+# Local secrets and Vercel project metadata
+.env
+.env.*
+!.env.example
+.vercel
+
+# Local-only test output
+coverage
+test-results
+playwright-report
