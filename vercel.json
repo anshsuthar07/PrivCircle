@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "functions": {
+    "app/api/ws/[path]/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
