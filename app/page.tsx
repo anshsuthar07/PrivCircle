@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { CreateRoomForm } from "./components/CreateRoomForm";
 import styles from "./home.module.css";
@@ -41,9 +42,14 @@ export default async function Home({
       <div className={`${styles.layout} home-layout`}>
         <section className={`${styles.hero} home-story`} aria-labelledby="home-title">
           <div className={styles.brand}>
-            <div className={styles.brandLock} aria-hidden="true">
-              <span />
-            </div>
+            <Image
+              className={styles.brandIcon}
+              src="/icon.svg"
+              width={36}
+              height={36}
+              alt=""
+              priority
+            />
             <span>PRIVCIRCLE</span>
           </div>
 
