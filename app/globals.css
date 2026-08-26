@@ -60,6 +60,18 @@ a {
   text-decoration: none;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .home-shell {
   position: relative;
   isolation: isolate;
@@ -240,7 +252,6 @@ h1 {
 }
 
 .path-field input,
-.standard-input,
 .select-wrap select {
   width: 100%;
   border: 0;
@@ -256,7 +267,11 @@ h1 {
 }
 
 .standard-input {
+  width: 100%;
   padding: 0 15px;
+  color: var(--text);
+  caret-color: var(--accent);
+  outline: 0;
 }
 
 input::placeholder {
@@ -338,6 +353,99 @@ input::placeholder {
   animation: reveal 0.22s ease both;
 }
 
+.password-input-shell {
+  position: relative;
+}
+
+.password-input-shell .standard-input {
+  padding-right: 70px;
+}
+
+.password-visibility {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  border: 0;
+  padding: 5px;
+  color: var(--accent);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  transform: translateY(-50%);
+}
+
+.password-visibility:hover {
+  color: #a0f3c7;
+}
+
+.password-strength {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.password-strength-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.password-strength-heading strong {
+  color: var(--muted-strong);
+  font-weight: 650;
+}
+
+.password-strength-heading strong[data-score="4"] {
+  color: var(--accent);
+}
+
+.strength-meter {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.strength-meter span {
+  height: 3px;
+  border-radius: 999px;
+  background: #26302c;
+  transition: background 0.18s ease;
+}
+
+.strength-meter span.filled {
+  background: var(--accent-strong);
+}
+
+.password-criteria {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 12px;
+  list-style: none;
+}
+
+.password-criteria li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #69756f;
+  font-size: 11px;
+  transition: color 0.18s ease;
+}
+
+.password-criteria li > span:first-child {
+  width: 13px;
+  color: #53605a;
+  font-weight: 700;
+  text-align: center;
+}
+
+.password-criteria li.criterion-met,
+.password-criteria li.criterion-met > span:first-child {
+  color: var(--accent);
+}
+
 @keyframes reveal {
   from {
     opacity: 0;
@@ -359,6 +467,13 @@ input::placeholder {
   height: 48px;
   appearance: none;
   padding: 0 40px 0 15px;
+  color-scheme: dark;
+}
+
+.select-wrap select option,
+.language-select option {
+  color: var(--text);
+  background: #101512;
 }
 
 .select-wrap > span {
@@ -415,8 +530,12 @@ input::placeholder {
 }
 
 .primary-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.72;
+}
+
+.primary-button[aria-busy="true"] {
+  cursor: wait;
 }
 
 .assurances {
