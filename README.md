@@ -1,6 +1,6 @@
 # PrivCircle
 
-PrivCircle is a minimal two-person collaborative code room: choose a path, optionally add a password, share the URL, and edit together in real time.
+PrivCircle is a minimal private collaborative code room: choose a path, optionally add a password, share the URL with your circle, and edit together in real time.
 
 The server—not the browser—enforces room passwords. Protected pages do not initialize CodeMirror, Yjs, or a WebSocket until a password grant has been issued. There is no room-listing endpoint.
 
@@ -88,7 +88,7 @@ npm run db:generate # generate migrations after schema changes
 npm run db:migrate  # apply migrations
 ```
 
-The integration and browser tests expect the Docker services to be running. They verify Redis-only expiry, PostgreSQL binary persistence and cascade deletion, Redis cache recovery, separate Hocuspocus-instance convergence, no pre-auth collaboration socket, simultaneous editing, and the two-person limit.
+The integration and browser tests expect the Docker services to be running. They verify Redis-only expiry, PostgreSQL binary persistence and cascade deletion, Redis cache recovery, separate Hocuspocus-instance convergence, no pre-auth collaboration socket, simultaneous editing, and the concurrent participant limit.
 
 GitHub Actions repeats migration, type, lint, integration, production-build, and Playwright checks on every push and pull request.
 

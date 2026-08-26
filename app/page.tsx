@@ -1,11 +1,6 @@
+import Link from "next/link";
 import { CreateRoomForm } from "./components/CreateRoomForm";
-
-const assurances = [
-  "Realtime sync",
-  "Private by default",
-  "Join by path",
-  "Optional password",
-];
+import styles from "./home.module.css";
 
 const features = [
   {
@@ -30,65 +25,71 @@ const features = [
   },
 ] as const;
 
-export default function Home() {
-  return (
-    <main className="home-shell">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ action?: string | string[] }>;
+}) {
+  const query = await searchParams;
+  const initialAction = query.action === "join" ? "join" : "create";
 
-      <div className="home-layout">
-        <section className="home-story" aria-labelledby="home-title">
-          <div className="home-brand">
-            <div className="brand-lock" aria-hidden="true">
+  return (
+    <main className={styles.shell}>
+      <div className={`${styles.ambient} ${styles.ambientOne}`} />
+      <div className={`${styles.ambient} ${styles.ambientTwo}`} />
+
+      <div className={`${styles.layout} home-layout`}>
+        <section className={`${styles.hero} home-story`} aria-labelledby="home-title">
+          <div className={styles.brand}>
+            <div className={styles.brandLock} aria-hidden="true">
               <span />
             </div>
             <span>PRIVCIRCLE</span>
           </div>
 
-          <div className="home-hero-copy">
-            <h1 id="home-title">
+          <div>
+            <h1 className={styles.title} id="home-title">
               Share code,
               <br />
               <span>not access.</span>
             </h1>
-            <p className="home-intro">
-              Private live rooms for two. No account required, no public
+            <p className={styles.intro}>
+              Private live rooms for your circle. No account required, no public
               directory, and protected content stays locked until you authenticate.
             </p>
           </div>
+        </section>
 
-          <div className="feature-grid" aria-label="Privacy and collaboration features">
+        <div className={`${styles.formColumn} home-form-column`}>
+          <section className={`${styles.card} home-card`} aria-label="Create or join a private room">
+            <CreateRoomForm initialAction={initialAction} />
+          </section>
+        </div>
+
+        <section className={styles.proof} aria-labelledby="proof-title">
+          <div className={styles.proofHeader}>
+            <h2 id="proof-title">Built for focused collaboration</h2>
+            <p>Explicit access, protected collaboration, and no public discovery.</p>
+          </div>
+          <div className={`${styles.featureGrid} feature-grid`}>
             {features.map((feature) => (
-              <article className="feature-card" key={feature.title}>
+              <article className={styles.featureCard} key={feature.title}>
                 <FeatureIcon name={feature.icon} />
-                <h2>{feature.title}</h2>
+                <h3>{feature.title}</h3>
                 <p>{feature.description}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <div className="home-form-column">
-          <section className="home-card" aria-label="Create or join a private room">
-            <CreateRoomForm />
-
-            <div className="assurances" aria-label="Room features">
-              {assurances.map((assurance) => (
-                <div className="assurance" key={assurance}>
-                  <span className="checkmark" aria-hidden="true">
-                    ✓
-                  </span>
-                  {assurance}
-                </div>
-              ))}
-            </div>
-
-            <p className="privacy-note">
-              Room URLs are never listed publicly. Passwords use Argon2id, and
-              protected content stays disconnected until authentication succeeds.
-            </p>
-          </section>
-        </div>
+        <footer className={styles.footer}>
+          <span>Private code rooms with server-enforced access controls.</span>
+          <nav aria-label="Product information">
+            <Link href="/security">Security &amp; privacy</Link>
+            <Link href="/security#retention">Retention model</Link>
+            <a href="https://github.com/anshsuthar07/PrivCircle">Source</a>
+          </nav>
+        </footer>
       </div>
     </main>
   );
@@ -96,7 +97,7 @@ export default function Home() {
 
 function FeatureIcon({ name }: { name: (typeof features)[number]["icon"] }) {
   return (
-    <span className="feature-icon" aria-hidden="true">
+    <span className={styles.featureIcon} aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none">
         {name === "shield" ? (
           <path d="M12 3 19 6v5c0 4.7-2.7 8-7 10-4.3-2-7-5.3-7-10V6l7-3Z" />

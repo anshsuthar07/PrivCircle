@@ -1,8 +1,22 @@
 "use client";
 
-import { FormEvent, lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  FormEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import type { SafeRoomMetadata } from "@/lib/types";
+import {
+  Button,
+  FormField,
+  PasswordInput,
+} from "@/app/components/ui/controls";
+import styles from "./room.module.css";
 
 const RealtimeEditor = lazy(() => import("./RealtimeEditor"));
 
@@ -20,11 +34,17 @@ type Phase =
   | "unavailable"
   | "error";
 
+export type RoomStateVariant = Extract<
+  Phase,
+  "loading" | "expired" | "unavailable" | "error"
+>;
+
 async function readPayload(response: Response) {
   return (await response.json().catch(() => ({}))) as Record<string, unknown>;
 }
 
 export function RoomClient({ path }: { path: string }) {
+  const controllerRef = useRef<AbortController | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [metadata, setMetadata] = useState<SafeRoomMetadata | null>(null);
   const [access, setAccess] = useState<AccessPayload | null>(null);
@@ -47,47 +67,54 @@ export function RoomClient({ path }: { path: string }) {
     return nextAccess;
   }, [path]);
 
-  useEffect(() => {
+  const enterRoom = useCallback(async () => {
+    controllerRef.current?.abort();
     const controller = new AbortController();
+    controllerRef.current = controller;
+    setPhase("loading");
+    setMessage("");
 
-    async function enterRoom() {
-      setPhase("loading");
+    try {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(path)}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const payload = await readPayload(response);
+      if (response.status === 410) {
+        setPhase("expired");
+        return;
+      }
+      if (!response.ok) {
+        setPhase(response.status === 404 ? "unavailable" : "error");
+        return;
+      }
+
+      const nextMetadata = payload as unknown as SafeRoomMetadata;
+      setMetadata(nextMetadata);
       try {
-        const response = await fetch(`/api/rooms/${encodeURIComponent(path)}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const payload = await readPayload(response);
-        if (response.status === 410) {
-          setPhase("expired");
-          return;
-        }
-        if (!response.ok) {
-          setPhase(response.status === 404 ? "unavailable" : "error");
-          return;
-        }
-
-        setMetadata(payload as unknown as SafeRoomMetadata);
-        try {
-          await requestAccess();
-          setPhase("granted");
-        } catch (error) {
-          if (error instanceof Error && error.message === "PASSWORD_REQUIRED") {
-            setPhase("locked");
-            return;
-          }
-          setPhase("error");
-        }
+        await requestAccess();
+        setPhase("granted");
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setPhase("error");
+        if (error instanceof Error && error.message === "PASSWORD_REQUIRED") {
+          setPhase("locked");
+          return;
         }
+        setPhase("error");
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setPhase("error");
       }
     }
-
-    void enterRoom();
-    return () => controller.abort();
   }, [path, requestAccess]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void enterRoom(), 0);
+    return () => {
+      window.clearTimeout(timer);
+      controllerRef.current?.abort();
+    };
+  }, [enterRoom]);
 
   const getAccessToken = useCallback(async () => {
     if (
@@ -102,6 +129,11 @@ export function RoomClient({ path }: { path: string }) {
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
+    if (!password) {
+      setMessage("Enter the room password.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const response = await fetch(`/api/rooms/${encodeURIComponent(path)}/auth`, {
@@ -112,7 +144,7 @@ export function RoomClient({ path }: { path: string }) {
       const payload = await readPayload(response);
       if (!response.ok) {
         if (response.status === 429) {
-          setMessage("Too many attempts. Please wait before trying again.");
+          setMessage("Too many attempts. Wait a moment before trying again.");
         } else if (response.status >= 500) {
           setMessage("The room service is unavailable. Please try again.");
         } else {
@@ -132,12 +164,16 @@ export function RoomClient({ path }: { path: string }) {
 
   if (phase === "granted" && metadata && access) {
     return (
-      <Suspense fallback={<RoomState title="Opening editor…" busy />}>
+      <Suspense fallback={<RoomState variant="loading" />}>
         <RealtimeEditor
           path={path}
           metadata={metadata}
           participantId={access.participantId}
           getAccessToken={getAccessToken}
+          onAccessExpired={() => {
+            setAccess(null);
+            void enterRoom();
+          }}
         />
       </Suspense>
     );
@@ -145,67 +181,132 @@ export function RoomClient({ path }: { path: string }) {
 
   if (phase === "locked") {
     return (
-      <main className="room-gate-shell">
-        <section className="room-gate" aria-labelledby="private-room-title">
-          <div className="gate-lock" aria-hidden="true">⌁</div>
-          <div className="eyebrow">PRIVATE ROOM</div>
-          <h1 id="private-room-title">Password required</h1>
-          <p>Enter the room password before any document data is connected or loaded.</p>
-          <form className="gate-form" onSubmit={authenticate}>
-            <label htmlFor="join-password">Room password</label>
-            <input
+      <main className={`${styles.shell} room-gate-shell`}>
+        <section
+          className={`${styles.card} ${styles.gate} room-gate`}
+          aria-labelledby="private-room-title"
+        >
+          <div className={styles.gateLock} aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="5" y="10" width="14" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+          </div>
+          <div className={styles.eyebrow}>PRIVATE ROOM</div>
+          <h1 className={styles.heading} id="private-room-title">
+            Password required
+          </h1>
+          <p className={styles.body}>
+            Authenticate before PrivCircle connects to or loads the shared document.
+          </p>
+          <form
+            className={`${styles.gateForm} gate-form`}
+            onSubmit={authenticate}
+            aria-busy={submitting}
+            noValidate
+          >
+            <FormField
               id="join-password"
-              className="standard-input"
-              type="password"
-              minLength={8}
-              maxLength={128}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
-              autoComplete="current-password"
-              autoFocus
-              required
-            />
-            {message ? <div className="gate-error" role="alert">{message}</div> : null}
-            <button className="primary-button" type="submit" disabled={submitting}>
+              label="Room password"
+              error={message || undefined}
+            >
+              <PasswordInput
+                id="join-password"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setMessage("");
+                }}
+                placeholder="Enter password"
+                minLength={8}
+                maxLength={128}
+                autoComplete="current-password"
+                autoFocus
+                required
+                invalid={Boolean(message)}
+                aria-describedby={message ? "join-password-error" : undefined}
+                aria-errormessage={message ? "join-password-error" : undefined}
+              />
+            </FormField>
+            <Button
+              type="submit"
+              size="main"
+              disabled={submitting}
+              aria-busy={submitting}
+            >
               {submitting ? "Checking…" : "Join room"}
-            </button>
+            </Button>
           </form>
-          <p className="room-path-label">/{path}</p>
+          <p className={styles.roomPath}>/{path}</p>
         </section>
       </main>
     );
   }
 
-  if (phase === "expired") {
-    return <RoomState title="Room expired" body="This room is no longer available." />;
-  }
-  if (phase === "unavailable") {
-    return <RoomState title="Room unavailable" body="Check the private link or create a new room." />;
-  }
-  if (phase === "error") {
-    return <RoomState title="Unable to connect" body="The room service is temporarily unavailable." />;
-  }
-  return <RoomState title="Opening private room…" busy />;
+  return (
+    <RoomState
+      variant={phase === "granted" ? "error" : phase}
+      onRetry={phase === "error" ? () => void enterRoom() : undefined}
+    />
+  );
 }
 
 function RoomState({
-  title,
-  body,
-  busy = false,
+  variant,
+  onRetry,
 }: {
-  title: string;
-  body?: string;
-  busy?: boolean;
+  variant: RoomStateVariant;
+  onRetry?: () => void;
 }) {
+  const content = {
+    loading: {
+      title: "Opening room…",
+      body: "Checking room access and availability.",
+    },
+    expired: {
+      title: "Room expired",
+      body: "This room reached its inactivity limit and its shared content is no longer available.",
+    },
+    unavailable: {
+      title: "Room unavailable",
+      body: "The link may be incorrect, or the room may never have existed.",
+    },
+    error: {
+      title: "Unable to connect",
+      body: "The room service is temporarily unavailable. Your link has not changed.",
+    },
+  }[variant];
+
   return (
-    <main className="room-gate-shell">
-      <section className="room-state" aria-live="polite">
-        {busy ? <span className="loading-dot" aria-hidden="true" /> : null}
-        <div className="eyebrow">PRIVCIRCLE</div>
-        <h1>{title}</h1>
-        {body ? <p>{body}</p> : null}
-        {!busy ? <Link className="secondary-link" href="/">Create a room</Link> : null}
+    <main className={`${styles.shell} room-gate-shell`}>
+      <section
+        className={`${styles.card} ${styles.state} room-state`}
+        aria-live="polite"
+        aria-busy={variant === "loading"}
+      >
+        {variant === "loading" ? (
+          <span className={styles.loadingDot} aria-hidden="true" />
+        ) : null}
+        <div className={styles.eyebrow}>PRIVCIRCLE</div>
+        <h1 className={styles.heading}>{content.title}</h1>
+        <p className={styles.body}>{content.body}</p>
+        {variant !== "loading" ? (
+          <div className={styles.actions}>
+            {variant === "error" && onRetry ? (
+              <Button type="button" variant="primary" onClick={onRetry}>
+                Try again
+              </Button>
+            ) : null}
+            {variant !== "error" ? (
+              <Link className={`${styles.linkAction} ${styles.primaryLink}`} href="/?action=join">
+                Enter another room
+              </Link>
+            ) : null}
+            <Link className={styles.linkAction} href="/">
+              Create new room
+            </Link>
+          </div>
+        ) : null}
       </section>
     </main>
   );

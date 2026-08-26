@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "Create a private, optionally password-protected room and collaborate in real time.",
   openGraph: {
     title: "PrivCircle — Private live rooms",
-    description: "Private, expiring collaborative code rooms for two people.",
+    description: "Private, expiring collaborative code rooms for trusted groups.",
     type: "website",
     images: [
       {
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "PrivCircle — Private live rooms",
-    description: "Private, expiring collaborative code rooms for two people.",
+    description: "Private, expiring collaborative code rooms for trusted groups.",
     images: ["/privcircle-social.png"],
   },
 };

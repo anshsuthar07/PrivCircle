@@ -5,7 +5,7 @@ import {
   isValidRoomPath,
   normalizeRoomPath,
 } from "@/lib/validation";
-import { parseJoinPathInput } from "@/lib/path-policy";
+import { getRoomPathIssue, parseJoinPathInput } from "@/lib/path-policy";
 import { EXPIRATION_SECONDS } from "@/lib/types";
 
 describe("room input validation", () => {
@@ -23,14 +23,25 @@ describe("room input validation", () => {
     (path) => expect(isValidRoomPath(path)).toBe(true),
   );
 
-  it("accepts room paths and shared URLs for joining", () => {
-    expect(parseJoinPathInput(" Team_Dev-1 ")).toBe("team_dev-1");
-    expect(parseJoinPathInput("/team-dev/")).toBe("team-dev");
-    expect(parseJoinPathInput("https://privcircle.vercel.app/Secret-Room")).toBe(
+  it("accepts path-only and same-origin room links for joining", () => {
+    const origin = "https://privcircle.vercel.app";
+    expect(parseJoinPathInput(" Team_Dev-1 ", origin)).toBe("team_dev-1");
+    expect(parseJoinPathInput("/team-dev/", origin)).toBe("team-dev");
+    expect(parseJoinPathInput("https://privcircle.vercel.app/Secret-Room", origin)).toBe(
       "secret-room",
     );
-    expect(parseJoinPathInput("https://privcircle.vercel.app/api")).toBeNull();
-    expect(parseJoinPathInput("../secret")).toBeNull();
+    expect(parseJoinPathInput("https://privcircle.vercel.app/api", origin)).toBeNull();
+    expect(parseJoinPathInput("https://example.com/team-dev", origin)).toBeNull();
+    expect(parseJoinPathInput("not a url", origin)).toBeNull();
+    expect(parseJoinPathInput("../secret", origin)).toBeNull();
+  });
+
+  it("reports precise custom-path policy failures", () => {
+    expect(getRoomPathIssue("ab")).toBe("too-short");
+    expect(getRoomPathIssue("a".repeat(65))).toBe("too-long");
+    expect(getRoomPathIssue("team room")).toBe("invalid-characters");
+    expect(getRoomPathIssue("security")).toBe("reserved");
+    expect(getRoomPathIssue("team-room")).toBeNull();
   });
 
   it("requires strong-enough optional passwords", () => {
