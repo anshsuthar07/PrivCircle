@@ -21,8 +21,8 @@ export default function Home() {
         <div className="eyebrow">PRIVCIRCLE</div>
         <h1 id="home-title">Share code, not access.</h1>
         <p className="home-intro">
-          Create a focused live room for two people. No account, no public
-          directory, and no noise.
+          Create or join a focused live room for two people. No account, no
+          public directory, and no noise.
         </p>
 
         <CreateRoomForm />

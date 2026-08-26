@@ -8,8 +8,10 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
 } from "@/lib/password-policy";
+import { parseJoinPathInput } from "@/lib/path-policy";
 
 type Expiration = "1h" | "24h" | "7d" | "lifetime";
+type RoomAction = "create" | "join";
 
 interface CreateRoomResponse {
   path: string;
@@ -24,6 +26,7 @@ function randomPath() {
 
 export function CreateRoomForm() {
   const router = useRouter();
+  const [action, setAction] = useState<RoomAction>("create");
   const [path, setPath] = useState("");
   const [passwordProtected, setPasswordProtected] = useState(false);
   const [password, setPassword] = useState("");
@@ -35,6 +38,8 @@ export function CreateRoomForm() {
   const passwordCriteria = evaluatePassword(password);
   const passwordScore = Object.values(passwordCriteria).filter(Boolean).length;
   const passwordReady = !passwordProtected || isStrongPassword(password);
+  const joinPath = parseJoinPathInput(path);
+  const actionReady = action === "join" ? Boolean(joinPath) : passwordReady;
   const strengthLabel =
     password.length === 0
       ? "Start typing"
@@ -44,6 +49,16 @@ export function CreateRoomForm() {
     event.preventDefault();
     setError("");
     setCollisionPath("");
+
+    if (action === "join") {
+      if (!joinPath) {
+        setError("Enter a valid room path or shared PrivCircle link.");
+        return;
+      }
+      setSubmitting(true);
+      router.push(`/${joinPath}`);
+      return;
+    }
 
     if (!passwordReady) {
       setError(
@@ -90,53 +105,100 @@ export function CreateRoomForm() {
     }
   }
 
+  function selectAction(nextAction: RoomAction) {
+    setAction(nextAction);
+    setError("");
+    setCollisionPath("");
+    setSubmitting(false);
+  }
+
   return (
     <form className="create-form" onSubmit={handleSubmit}>
+      <div className="room-action-switch" role="group" aria-label="Room action">
+        <button
+          type="button"
+          className={action === "create" ? "active" : ""}
+          aria-pressed={action === "create"}
+          onClick={() => selectAction("create")}
+        >
+          Create room
+        </button>
+        <button
+          type="button"
+          className={action === "join" ? "active" : ""}
+          aria-pressed={action === "join"}
+          onClick={() => selectAction("join")}
+        >
+          Join room
+        </button>
+      </div>
+
       <div className="field-group">
         <div className="label-row">
           <label htmlFor="room-path">Room path</label>
-          <button
-            className="text-button"
-            type="button"
-            onClick={() => setPath(randomPath())}
-          >
-            Generate secure path
-          </button>
+          {action === "create" ? (
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => setPath(randomPath())}
+            >
+              Generate secure path
+            </button>
+          ) : null}
         </div>
-        <div className="path-field">
-          <span aria-hidden="true">/</span>
+        <div className={`path-field ${action === "join" ? "join-path-field" : ""}`}>
+          <span aria-hidden="true">{action === "join" ? "→" : "/"}</span>
           <input
             id="room-path"
             name="path"
             type="text"
             value={path}
             onChange={(event) => setPath(event.target.value)}
-            placeholder="e.g. devteam-sprint1"
-            minLength={3}
-            maxLength={64}
-            pattern="[A-Za-z0-9_-]+"
+            placeholder={
+              action === "join" ? "room path or paste shared link" : "e.g. devteam-sprint1"
+            }
+            minLength={action === "create" ? 3 : undefined}
+            maxLength={action === "create" ? 64 : 2048}
+            pattern={action === "create" ? "[A-Za-z0-9_-]+" : undefined}
             autoComplete="off"
             spellCheck={false}
+            aria-invalid={action === "join" && path.length > 0 && !joinPath}
+            aria-describedby="room-path-hint"
           />
         </div>
-        <p className="field-hint">Leave blank and we&apos;ll generate one for you.</p>
+        <p
+          className={`field-hint ${
+            action === "join" && path.length > 0 && !joinPath
+              ? "field-hint-error"
+              : ""
+          }`}
+          id="room-path-hint"
+        >
+          {action === "create"
+            ? "Leave blank and we’ll generate one for you."
+            : path.length > 0 && !joinPath
+              ? "Use 3–64 letters, numbers, hyphens, or underscores."
+              : "Protected rooms ask for the password on the next screen."}
+        </p>
       </div>
 
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          checked={passwordProtected}
-          onChange={(event) => setPasswordProtected(event.target.checked)}
-        />
-        <span className="toggle" aria-hidden="true">
-          <span />
-        </span>
-        <span>
-          Password protected <small>Optional</small>
-        </span>
-      </label>
+      {action === "create" ? (
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={passwordProtected}
+            onChange={(event) => setPasswordProtected(event.target.checked)}
+          />
+          <span className="toggle" aria-hidden="true">
+            <span />
+          </span>
+          <span>
+            Password protected <small>Optional</small>
+          </span>
+        </label>
+      ) : null}
 
-      {passwordProtected ? (
+      {action === "create" && passwordProtected ? (
         <div className="field-group reveal-field">
           <label htmlFor="room-password">Password</label>
           <div className="password-input-shell">
@@ -194,28 +256,30 @@ export function CreateRoomForm() {
         </div>
       ) : null}
 
-      <div className="field-group">
-        <label htmlFor="expiration">Delete after inactivity</label>
-        <div className="select-wrap">
-          <select
-            id="expiration"
-            value={expiration}
-            onChange={(event) => setExpiration(event.target.value as Expiration)}
-          >
-            <option value="1h">1 hour</option>
-            <option value="24h">24 hours — recommended</option>
-            <option value="7d">7 days</option>
-            <option value="lifetime">Lifetime — stored until removed</option>
-          </select>
-          <span aria-hidden="true">⌄</span>
+      {action === "create" ? (
+        <div className="field-group">
+          <label htmlFor="expiration">Delete after inactivity</label>
+          <div className="select-wrap">
+            <select
+              id="expiration"
+              value={expiration}
+              onChange={(event) => setExpiration(event.target.value as Expiration)}
+            >
+              <option value="1h">1 hour</option>
+              <option value="24h">24 hours — recommended</option>
+              <option value="7d">7 days</option>
+              <option value="lifetime">Lifetime — stored until removed</option>
+            </select>
+            <span aria-hidden="true">⌄</span>
+          </div>
+          {expiration === "lifetime" ? (
+            <p className="lifetime-warning">
+              Stored in PostgreSQL until manually removed, the database is deleted,
+              or provider limits intervene.
+            </p>
+          ) : null}
         </div>
-        {expiration === "lifetime" ? (
-          <p className="lifetime-warning">
-            Stored in PostgreSQL until manually removed, the database is deleted,
-            or provider limits intervene.
-          </p>
-        ) : null}
-      </div>
+      ) : null}
 
       {error ? (
         <div className="form-error" role="alert">
@@ -231,10 +295,16 @@ export function CreateRoomForm() {
       <button
         className="primary-button"
         type="submit"
-        disabled={submitting || !passwordReady}
+        disabled={submitting || !actionReady}
         aria-busy={submitting}
       >
-        {submitting ? "Creating secure room…" : "Create private room"}
+        {submitting
+          ? action === "create"
+            ? "Creating secure room…"
+            : "Opening room…"
+          : action === "create"
+            ? "Create private room"
+            : "Join this room"}
         {!submitting ? <span aria-hidden="true">→</span> : null}
       </button>
     </form>

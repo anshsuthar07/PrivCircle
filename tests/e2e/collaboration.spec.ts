@@ -37,7 +37,15 @@ test("protected room stays disconnected until auth and syncs two editors", async
       websocketCount += 1;
     }
   });
-  await second.goto(`/${path}`);
+  await second.goto("/");
+  await second
+    .locator(".room-action-switch")
+    .getByRole("button", { name: "Join room" })
+    .click();
+  await expect(second.getByLabel("Delete after inactivity")).toHaveCount(0);
+  await second.getByLabel("Room path").fill(`${second.url()}${path}`);
+  await second.getByRole("button", { name: "Join this room" }).click();
+  await expect(second).toHaveURL(new RegExp(`/${path}$`));
   await expect(second.getByRole("heading", { name: "Password required" })).toBeVisible();
   await expect(second.locator(".cm-content")).toHaveCount(0);
   expect(websocketCount).toBe(0);
