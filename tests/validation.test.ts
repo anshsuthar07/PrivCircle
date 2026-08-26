@@ -23,19 +23,21 @@ describe("room input validation", () => {
   );
 
   it("requires strong-enough optional passwords", () => {
+    for (const password of ["short", "longenough", "long-enough", "12345678!"]) {
+      expect(
+        createRoomSchema.safeParse({
+          path: "room-one",
+          passwordProtected: true,
+          password,
+          expiration: "24h",
+        }).success,
+      ).toBe(false);
+    }
     expect(
       createRoomSchema.safeParse({
         path: "room-one",
         passwordProtected: true,
-        password: "short",
-        expiration: "24h",
-      }).success,
-    ).toBe(false);
-    expect(
-      createRoomSchema.safeParse({
-        path: "room-one",
-        passwordProtected: true,
-        password: "long-enough",
+        password: "long-enough1",
         expiration: "24h",
       }).success,
     ).toBe(true);

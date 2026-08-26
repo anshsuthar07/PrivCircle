@@ -10,9 +10,22 @@ test("protected room stays disconnected until auth and syncs two editors", async
   await first.goto("/");
   await first.getByLabel("Room path").fill(path);
   await first.getByText("Password protected").click();
-  await first.getByLabel("Password", { exact: true }).fill("testing123");
+  const createButton = first.getByRole("button", { name: "Create private room" });
+  const passwordInput = first.getByLabel("Password", { exact: true });
+  await expect(createButton).toBeDisabled();
+  await passwordInput.fill("testing123");
+  await expect(
+    first.locator(".password-criteria li", { hasText: "One special character" }),
+  ).not.toHaveClass(/criterion-met/);
+  await expect(createButton).toBeDisabled();
+  await passwordInput.fill("testing123!");
+  await expect(first.getByText("Password strength").locator("..")).toContainText(
+    "Strong",
+  );
+  await expect(first.locator(".password-criteria .criterion-met")).toHaveCount(4);
+  await expect(createButton).toBeEnabled();
   await first.getByLabel("Delete after inactivity").selectOption("1h");
-  await first.getByRole("button", { name: "Create private room" }).click();
+  await createButton.click();
   await expect(first).toHaveURL(new RegExp(`/${path}$`));
   await expect(first.locator(".cm-content")).toBeVisible();
 
@@ -34,7 +47,7 @@ test("protected room stays disconnected until auth and syncs two editors", async
   await expect(second.getByText("Incorrect password. Please try again.")).toBeVisible();
   expect(websocketCount).toBe(0);
 
-  await second.getByLabel("Room password").fill("testing123");
+  await second.getByLabel("Room password").fill("testing123!");
   await second.getByRole("button", { name: "Join room" }).click();
   await expect(second.locator(".cm-content")).toBeVisible();
   await expect(first.getByText("2 people connected")).toBeVisible();
@@ -52,7 +65,7 @@ test("protected room stays disconnected until auth and syncs two editors", async
   const thirdContext = await browser.newContext();
   const third = await thirdContext.newPage();
   await third.goto(`/${path}`);
-  await third.getByLabel("Room password").fill("testing123");
+  await third.getByLabel("Room password").fill("testing123!");
   await third.getByRole("button", { name: "Join room" }).click();
   await expect(third.getByRole("heading", { name: "Room is full" })).toBeVisible();
 
