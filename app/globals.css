@@ -22,6 +22,7 @@
 
 html {
   min-height: 100%;
+  scrollbar-gutter: stable;
   color-scheme: dark;
   background: var(--bg);
 }
@@ -77,8 +78,10 @@ a {
   isolation: isolate;
   display: grid;
   min-height: 100vh;
+  min-height: 100dvh;
   place-items: center;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   padding: 48px clamp(24px, 4vw, 72px);
 }
 
@@ -95,7 +98,7 @@ a {
 }
 
 .ambient {
-  position: absolute;
+  position: fixed;
   z-index: -1;
   width: 340px;
   height: 340px;
@@ -115,15 +118,21 @@ a {
 }
 
 .home-layout {
+  --home-stage-height: min(780px, calc(100vh - 96px));
+  --home-stage-height: min(780px, calc(100dvh - 96px));
+
   display: grid;
   width: min(100%, 1380px);
+  height: var(--home-stage-height);
   grid-template-columns: minmax(0, 1.12fr) minmax(430px, 0.88fr);
-  align-items: stretch;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
   gap: clamp(56px, 7vw, 112px);
 }
 
 .home-story {
   display: flex;
+  height: 100%;
   min-width: 0;
   flex-direction: column;
   justify-content: space-between;
@@ -219,8 +228,9 @@ a {
 
 .home-form-column {
   display: grid;
-  min-height: min(780px, calc(100vh - 96px));
-  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  align-items: start;
   border-left: 1px solid rgba(255, 255, 255, 0.055);
   padding-left: clamp(48px, 6vw, 96px);
 }
@@ -228,16 +238,18 @@ a {
 .home-card {
   display: flex;
   width: min(100%, 500px);
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 22px;
   background: linear-gradient(145deg, rgba(18, 24, 21, 0.97), rgba(10, 14, 12, 0.96));
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.025);
-  padding: 32px;
+  padding: 30px 32px;
 }
 
 .home-card .create-form {
+  gap: 18px;
   margin-top: 0;
 }
 
@@ -699,7 +711,7 @@ input::placeholder {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
-  margin-top: 22px;
+  margin-top: 18px;
 }
 
 .assurance {
@@ -1073,6 +1085,37 @@ input::placeholder {
   }
 }
 
+@media (min-width: 1021px) and (max-height: 850px) {
+  .home-shell {
+    padding-block: 24px;
+  }
+
+  .home-layout {
+    --home-stage-height: min(780px, calc(100vh - 48px));
+    --home-stage-height: min(780px, calc(100dvh - 48px));
+  }
+
+  .home-card {
+    padding: 22px 28px;
+  }
+
+  .home-card .create-form {
+    gap: 14px;
+  }
+
+  .home-card .field-group {
+    gap: 7px;
+  }
+
+  .home-card .assurances {
+    margin-top: 12px;
+  }
+
+  .home-card .privacy-note {
+    padding-top: 10px;
+  }
+}
+
 @media (max-width: 1020px) {
   .home-shell {
     padding: 42px 24px;
@@ -1080,7 +1123,9 @@ input::placeholder {
 
   .home-layout {
     width: min(100%, 760px);
+    height: auto;
     grid-template-columns: 1fr;
+    grid-template-rows: none;
     gap: 46px;
   }
 
@@ -1090,6 +1135,7 @@ input::placeholder {
 
   .home-story {
     display: block;
+    height: auto;
   }
 
   .feature-grid {
@@ -1101,6 +1147,7 @@ input::placeholder {
   }
 
   .home-form-column {
+    height: auto;
     min-height: 0;
     align-items: center;
     justify-items: center;
@@ -1113,6 +1160,7 @@ input::placeholder {
   .home-card {
     width: min(100%, 620px);
     height: auto;
+    min-height: 0;
   }
 
   .home-card .privacy-note {
