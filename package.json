@@ -1,24 +1,80 @@
 {
-  "name": "private-share",
+  "name": "privcircle",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    }
+  },
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently -k -n web,realtime -c cyan,green \"next dev\" \"tsx watch --env-file-if-exists=.env.local server/dev-realtime.ts\"",
+    "dev:web": "next dev",
+    "dev:realtime": "tsx watch --env-file-if-exists=.env.local server/dev-realtime.ts",
+    "check:env": "node scripts/check-env.mjs",
+    "prebuild": "npm run check:env",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint app lib db server tests scripts next.config.ts drizzle.config.ts playwright.config.ts vitest.config.ts --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:migrate:local": "node --env-file-if-exists=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",
+    "verify": "npm run check:env && npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/legacy-modes": "^6.5.3",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.43.9",
+    "@hocuspocus/extension-database": "^4.6.0",
+    "@hocuspocus/extension-redis": "^4.6.0",
+    "@hocuspocus/provider": "^4.6.0",
+    "@hocuspocus/server": "^4.6.0",
+    "@vercel/functions": "^3.9.5",
+    "argon2": "^0.45.1",
+    "codemirror": "^6.0.2",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "~5.6.1",
+    "jose": "^6.2.10",
     "next": "16.3.2",
+    "postgres": "^3.4.9",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "ws": "^8.21.3",
+    "y-codemirror.next": "^0.3.6",
+    "yjs": "^13.6.32",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^10.0.5",
+    "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
-    "typescript": "^5"
+    "tsx": "^4.23.12",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   }
 }
