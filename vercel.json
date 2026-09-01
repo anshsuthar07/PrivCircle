@@ -4,6 +4,15 @@
   "functions": {
     "app/api/ws/[path]/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/documents/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/documents",
+      "schedule": "17 3 * * *"
+    }
+  ]
 }

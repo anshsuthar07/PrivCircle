@@ -27,7 +27,7 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:migrate:local": "node --env-file-if-exists=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",
+    "db:migrate:local": "node scripts/migrate-local.mjs",
     "verify": "npm run check:env && npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
@@ -47,6 +47,7 @@
     "@hocuspocus/extension-redis": "^4.6.0",
     "@hocuspocus/provider": "^4.6.0",
     "@hocuspocus/server": "^4.6.0",
+    "@vercel/blob": "^2.8.0",
     "@vercel/functions": "^3.9.5",
     "argon2": "^0.45.1",
     "codemirror": "^6.0.2",

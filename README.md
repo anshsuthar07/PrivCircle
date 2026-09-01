@@ -17,6 +17,7 @@ The server—not the browser—enforces room passwords. Protected pages do not i
 - Redis cache rehydration from PostgreSQL for Lifetime rooms
 - Debounced persistence after 2 seconds, with a maximum 10-second interval
 - Shared cursors, presence count, language selection, Yjs undo/redo, copy link, and local word wrap
+- Temporary room files up to 300 MB each, uploaded straight from the browser to private Vercel Blob storage and deleted 24 hours after upload
 - Origin checks, CSP/security headers, request and WebSocket limits, and Redis rate limits
 
 Lifetime means there is no application-controlled expiry. A Lifetime room remains until it is manually removed, the PostgreSQL database is deleted, or the provider/storage plan intervenes. It is durable storage, not a guarantee of permanent preservation.
@@ -32,6 +33,26 @@ Lifetime room: Browser ↔ Hocuspocus ↔ Redis active cache
 ```
 
 Expiring-room passwords and documents are never written to PostgreSQL. Lifetime documents are stored as one binary Yjs snapshot per room, not as plaintext or one row per keystroke.
+
+## Temporary room files
+
+Rooms can also hold temporary files, which are separate from the collaborative document and from a room's own retention policy.
+
+```text
+Browser ──authorized initiate──▶ PrivCircle ──▶ PostgreSQL (room_documents metadata)
+   │                                  │
+   │                                  └──▶ upload token scoped to one object key
+   ▼
+Private Vercel Blob ◀── multipart upload, direct from the browser
+   ▲
+   └── short-lived presigned GET, issued only after room authorization
+```
+
+File bytes never pass through a serverless function. The upload token is bound to a single server-generated key of the form `rooms/<room-id>/<document-id>/<sanitized-name>` and carries the 300 MB ceiling, so the storage service itself rejects an oversized or misdirected upload. Finalization reads the object's true size back from storage rather than trusting the browser.
+
+Every file belongs to exactly one room. Listing, downloading, and deleting all pass through the same room grant that gates the editor, so a protected room's files stay closed until its password has been entered. Expiry is evaluated in SQL against the database clock on every listing and download, so a stale tab cannot reach an expired file.
+
+Files expire 24 hours after upload regardless of the room's own retention setting, including in Lifetime rooms.
 
 ## Run locally
 
@@ -54,6 +75,8 @@ NEXT_PUBLIC_WS_URL=ws://localhost:1234
 REALTIME_PORT=1234
 ```
 
+File sharing is optional locally. Without `BLOB_READ_WRITE_TOKEN` the room reports files as unavailable and everything else works normally. To exercise it, add a Vercel Blob read-write token and a `CRON_SECRET` as documented in `.env.example`.
+
 Apply the PostgreSQL migration and start both the web and local realtime servers:
 
 ```bash
@@ -66,8 +89,8 @@ Open [http://localhost:3000](http://localhost:3000). The local web server runs o
 ## Deploy to Vercel
 
 1. Create a Vercel project from this repository and use Node.js 22 with Fluid Compute enabled. `vercel.json` configures Fluid Compute and the Hobby plan's 300-second WebSocket function duration.
-2. Add a Neon PostgreSQL database and an Upstash Redis database.
-3. Set `DATABASE_URL`, `REDIS_URL`, `ROOM_TOKEN_SECRET`, `SESSION_PEPPER`, and `APP_ORIGIN` in Vercel. Use a pooled Neon URL, encrypted `rediss://` Upstash URL, and independent random secrets of at least 32 characters.
+2. Add a Neon PostgreSQL database, an Upstash Redis database, and — for file sharing — a Vercel Blob store.
+3. Set `DATABASE_URL`, `REDIS_URL`, `ROOM_TOKEN_SECRET`, `SESSION_PEPPER`, and `APP_ORIGIN` in Vercel. Use a pooled Neon URL, encrypted `rediss://` Upstash URL, and independent random secrets of at least 32 characters. Connecting a Blob store sets `BLOB_READ_WRITE_TOKEN` for you; add a `CRON_SECRET` of at least 32 characters so the cleanup job can authenticate.
 4. Do not set `NEXT_PUBLIC_WS_URL` in Vercel. The browser derives `wss://<current-host>/api/ws/<room>` so preview deployments remain same-origin.
 5. For migrations, optionally set `DIRECT_DATABASE_URL` to Neon's direct connection string, then run `npm run db:migrate` once before serving traffic. Runtime traffic continues to use pooled `DATABASE_URL`.
 6. Native WebSockets are currently a Vercel public-beta feature. Connections are pinned to a function instance for at most five minutes on Hobby; the client reconnects automatically and Redis keeps instances converged.
@@ -100,13 +123,19 @@ GitHub Actions repeats migration, type, lint, integration, production-build, and
 - Redis and PostgreSQL failures fail closed; there is no in-memory authorization fallback.
 - Room pages and room metadata use `no-store`/`noindex` controls.
 - A room URL is an identifier. Only the optional password is an additional authentication factor.
+- File uploads are stored privately and reached only through short-lived presigned URLs, capped so they never outlive the file's own 24-hour lifetime.
+- Storage keys are server-generated and contain a random document id. A filename is reduced to one inert path segment before it is used, so it cannot escape the room's namespace.
+- The cleanup endpoint accepts no caller-supplied document or storage identifiers; eligibility is decided entirely by the database clock.
 - The service provides server-enforced privacy, not end-to-end encryption.
 
 ## Operational limits
 
-- Documents are capped at a 1 MiB encoded Yjs snapshot.
+- The collaborative document is capped at a 1 MiB encoded Yjs snapshot.
+- Shared files are capped at 300 MB each. A room holds 20 active files and 1 GiB in total by default, configurable through `ROOM_DOCUMENT_LIMIT` and `ROOM_DOCUMENT_TOTAL_BYTES`.
 - A room supports two distinct anonymous participants; reconnects retain the same seat while their lease remains valid.
 - Lifetime means no application-controlled expiry. Provider quotas, manual database removal, or project deletion can still remove data.
 - Vercel Hobby WebSockets reconnect at the function-duration boundary, so Redis and PostgreSQL—not function memory—remain authoritative.
 
-The MVP intentionally has no accounts, public discovery, uploads, chat, profiles, or dashboard.
+Expired files are reclaimed by a scheduled job (`/api/cron/documents`, configured in `vercel.json`) and, between runs, by an opportunistic sweep triggered by room activity at most once every five minutes. Vercel's Hobby plan allows one cron run per day, so the committed schedule is daily; raise it on a plan that permits more frequent runs. Reclamation only frees storage — a file stops being listable and downloadable the moment it expires, not when the job runs.
+
+The MVP intentionally has no accounts, public discovery, chat, profiles, or dashboard. File sharing is deliberately temporary: there is no permanent file store.

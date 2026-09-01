@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { z } from "zod";
+import { MAX_DOCUMENT_BYTES } from "./documents/config";
 import {
   isStrongPassword,
   PASSWORD_MAX_LENGTH,
@@ -31,6 +32,20 @@ export const createRoomSchema = z
 
 export const authRoomSchema = z.object({
   password: z.string().max(128),
+});
+
+/**
+ * Upload initiation input.
+ *
+ * The declared size is bounded here so an obviously oversized request is
+ * refused before any storage credential is minted. It is a first gate, not the
+ * enforcement: the upload token carries the same ceiling, and the finalize step
+ * re-reads the true size from the storage provider.
+ */
+export const createDocumentSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  size: z.number().int().nonnegative().max(MAX_DOCUMENT_BYTES),
+  contentType: z.string().max(255).optional(),
 });
 
 export function generateRoomPath(length = 12) {

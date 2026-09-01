@@ -10,4 +10,5 @@ export const keys = {
   presence: (roomId: string) => `${prefix}:presence:${roomId}`,
   rateLimit: (scope: string, subject: string) =>
     `${prefix}:rate:${scope}:${subject}`,
+  documentSweep: () => `${prefix}:documents:sweep`,
 };

@@ -110,6 +110,31 @@ function validateDatabaseUrl(name, value, requirePooler) {
 validateDatabaseUrl("DATABASE_URL", databaseUrl, true);
 validateDatabaseUrl("DIRECT_DATABASE_URL", directDatabaseUrl, false);
 
+// Temporary room documents are optional: without a blob token the feature
+// reports itself as unavailable instead of breaking the room, so these values
+// are validated only when they are present.
+if (environment.BLOB_READ_WRITE_TOKEN) {
+  if (!environment.BLOB_READ_WRITE_TOKEN.startsWith("vercel_blob_rw_")) {
+    errors.push("BLOB_READ_WRITE_TOKEN does not look like a Vercel Blob read-write token.");
+  }
+  if (!isLocal && !environment.CRON_SECRET) {
+    errors.push(
+      "CRON_SECRET is required in production when BLOB_READ_WRITE_TOKEN is set, so expired documents can be reclaimed.",
+    );
+  }
+}
+
+if (environment.CRON_SECRET && environment.CRON_SECRET.length < 32) {
+  errors.push("CRON_SECRET must contain at least 32 characters.");
+}
+
+for (const name of ["ROOM_DOCUMENT_LIMIT", "ROOM_DOCUMENT_TOTAL_BYTES", "DOCUMENT_CLEANUP_BATCH"]) {
+  const value = environment[name];
+  if (value && !(Number.isSafeInteger(Number(value)) && Number(value) > 0)) {
+    errors.push(`${name} must be a positive integer.`);
+  }
+}
+
 if (websocketUrl) {
   const accepted = isLocal ? ["ws:", "wss:"] : ["wss:"];
   if (!accepted.includes(websocketUrl.protocol)) {

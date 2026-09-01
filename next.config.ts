@@ -1,8 +1,20 @@
 import type { NextConfig } from "next";
 
 const developmentEval = process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'";
+// Three distinct hosts take part in a browser upload and all are required:
+// vercel.com serves the multipart control plane (/api/blob/mpu), and the
+// object itself lives on the per-store host, which for a private store is
+// <id>.private.blob.vercel-storage.com. Downloads are top-level navigations
+// and need no connect-src allowance.
+const blobSources = [
+  "https://vercel.com",
+  "https://blob.vercel-storage.com",
+  "https://*.blob.vercel-storage.com",
+].join(" ");
 const connectSources =
-  process.env.NODE_ENV === "production" ? "'self' wss:" : "'self' ws: wss:";
+  process.env.NODE_ENV === "production"
+    ? `'self' wss: ${blobSources}`
+    : `'self' ws: wss: ${blobSources}`;
 
 const securityHeaders = [
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
