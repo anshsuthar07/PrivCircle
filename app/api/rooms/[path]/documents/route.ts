@@ -49,9 +49,16 @@ export async function GET(
       windowSeconds: 60,
     });
 
+    // No Origin requirement: browsers omit that header on same-origin GETs, so
+    // demanding it would fail closed in production, exactly as the room
+    // metadata endpoint has always avoided. This read is protected by the
+    // SameSite=Strict session cookie, which a cross-site request never carries,
+    // plus the room grant. The response has no CORS headers, so a cross-site
+    // caller could not read it even if it were sent.
     const authorization = await authorizeRoomRequest(
       request,
       (await context.params).path,
+      { requireTrustedOrigin: false },
     );
     if (authorization.status !== "authorized") {
       return authorizationFailure(authorization);

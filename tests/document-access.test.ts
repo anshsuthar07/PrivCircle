@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { randomBytes } from "node:crypto";
 import { createOrRefreshGrant } from "@/lib/auth/grants";
@@ -7,6 +7,7 @@ import { authorizeRoomRequest } from "@/lib/auth/room-access";
 import { getSessionCookieName, hashSessionToken } from "@/lib/auth/session";
 import { getRedis } from "@/lib/redis";
 import { createRoom } from "@/lib/storage/rooms";
+import { GET as listDocuments } from "@/app/api/rooms/[path]/documents/route";
 import { keys } from "@/lib/storage/keys";
 
 /**
@@ -137,6 +138,36 @@ describe("document authorization", () => {
     for (const path of ["..", "a/b", "ab", "api"]) {
       const result = await authorizeRoomRequest(request("placeholder"), path);
       expect(result.status).toBe("unavailable");
+    }
+  });
+
+  it("admits a same-origin GET that carries no Origin header in production", async () => {
+    // Browsers omit Origin on same-origin GET requests. Treating that as
+    // untrusted makes the file listing 403 on every real deployment while
+    // passing in development, where the fallback resolves the other way.
+    const path = roomPath();
+    await createRoom({ path, passwordHash: null, expiration: "1h" });
+    const headers = new Headers();
+    const noOrigin = new NextRequest(`${ORIGIN}/api/rooms/${path}/documents`, {
+      headers,
+    });
+    expect(noOrigin.headers.get("origin")).toBeNull();
+
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      // The real route handler, not just the helper: the defect was the route
+      // choosing the wrong option, which a helper-level test cannot see.
+      const response = await listDocuments(noOrigin, {
+        params: Promise.resolve({ path }),
+      });
+      expect(response.status).toBe(200);
+
+      // A mutating request under the same conditions must still be refused,
+      // because a browser always sends Origin for those.
+      const mutating = await authorizeRoomRequest(noOrigin, path);
+      expect(mutating.status).toBe("invalid-origin");
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 
