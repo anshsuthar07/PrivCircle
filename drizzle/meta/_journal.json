@@ -8,6 +8,13 @@
       "when": 1787658686760,
       "tag": "0000_harsh_dazzler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788258492016,
+      "tag": "0001_special_sentinels",
+      "breakpoints": true
     }
   ]
 }

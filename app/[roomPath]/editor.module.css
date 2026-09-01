@@ -140,7 +140,46 @@
 
 .area {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
+  transition: grid-template-columns var(--motion-standard) var(--ease-standard);
+}
+
+.area[data-files-open="true"] {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+@media (max-width: 900px) {
+  .area[data-files-open="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.actionGroup {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filesButton {
+  gap: var(--space-2);
+}
+
+.filesBadge {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  padding: 0 5px;
+  color: var(--color-primary-contrast);
+  background: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .host {
@@ -326,7 +365,7 @@
     display: contents;
   }
 
-  .copyButton {
+  .actionGroup {
     grid-column: 2;
     grid-row: 1;
   }

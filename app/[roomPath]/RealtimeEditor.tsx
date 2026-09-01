@@ -31,6 +31,7 @@ import * as Y from "yjs";
 import type { SafeRoomMetadata } from "@/lib/types";
 import { connectionLabel, expirationLabel, type ConnectionState } from "@/lib/ui-labels";
 import { Button, Select } from "@/app/components/ui/controls";
+import { DocumentsPanel } from "./DocumentsPanel";
 import styles from "./editor.module.css";
 
 type LanguageId =
@@ -121,6 +122,7 @@ export default function RealtimeEditor({
   const wrapCompartmentRef = useRef<Compartment | null>(null);
   const overflowRef = useRef<HTMLDetailsElement>(null);
   const fallbackRef = useRef<HTMLInputElement>(null);
+  const filesRef = useRef<Y.Map<unknown> | null>(null);
   const [language, setLanguage] = useState<LanguageId>("javascript");
   const [wrap, setWrap] = useState(
     () => typeof window !== "undefined" && localStorage.getItem("privcircle:word-wrap") === "true",
@@ -135,6 +137,9 @@ export default function RealtimeEditor({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [roomUrl, setRoomUrl] = useState("");
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [fileCount, setFileCount] = useState(0);
+  const [filesRevision, setFilesRevision] = useState(0);
 
   useEffect(() => {
     const currentUrl = window.location.href;
@@ -155,10 +160,14 @@ export default function RealtimeEditor({
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("content");
     const settings = ydoc.getMap<unknown>("settings");
+    // A shared counter, not the file list itself: metadata stays server-side and
+    // is re-fetched under authorization whenever a participant changes it.
+    const files = ydoc.getMap<unknown>("files");
     const undoManager = new Y.UndoManager(ytext);
     const languageCompartment = new Compartment();
     const wrapCompartment = new Compartment();
     settingsRef.current = settings;
+    filesRef.current = files;
     undoRef.current = undoManager;
     wrapCompartmentRef.current = wrapCompartment;
 
@@ -232,12 +241,15 @@ export default function RealtimeEditor({
       setCanRedo(undoManager.redoStack.length > 0);
     };
 
+    const notifyFilesChanged = () => setFilesRevision((value) => value + 1);
+
     const handleOffline = () => setConnection("offline");
     const handleOnline = () => setConnection(connectedOnce ? "reconnecting" : "connecting");
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
     provider.awareness?.on("change", updateParticipants);
     settings.observe(updateLanguage);
+    files.observe(notifyFilesChanged);
     undoManager.on("stack-item-added", updateUndoState);
     undoManager.on("stack-item-popped", updateUndoState);
     undoManager.on("stack-cleared", updateUndoState);
@@ -289,6 +301,7 @@ export default function RealtimeEditor({
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
       settings.unobserve(updateLanguage);
+      files.unobserve(notifyFilesChanged);
       provider.awareness?.off("change", updateParticipants);
       undoManager.off("stack-item-added", updateUndoState);
       undoManager.off("stack-item-popped", updateUndoState);
@@ -298,6 +311,7 @@ export default function RealtimeEditor({
       undoManager.destroy();
       ydoc.destroy();
       settingsRef.current = null;
+      filesRef.current = null;
       undoRef.current = null;
       wrapCompartmentRef.current = null;
       editorViewRef.current = null;
@@ -307,6 +321,10 @@ export default function RealtimeEditor({
   function selectLanguage(nextLanguage: LanguageId) {
     settingsRef.current?.set("language", nextLanguage);
   }
+
+  const announceFilesChanged = useCallback(() => {
+    filesRef.current?.set("revision", Date.now());
+  }, []);
 
   function toggleWrap() {
     const next = !wrap;
@@ -362,9 +380,24 @@ export default function RealtimeEditor({
             <span className={styles.presenceDot} aria-hidden="true" />
             {presenceText}
           </span>
-          <Button className={styles.copyButton} type="button" variant="tool" onClick={copyLink}>
-            Copy link
-          </Button>
+          <div className={styles.actionGroup}>
+            <Button
+              className={styles.filesButton}
+              type="button"
+              variant="tool"
+              onClick={() => setFilesOpen((open) => !open)}
+              aria-expanded={filesOpen}
+              aria-controls="room-files"
+            >
+              Files
+              {fileCount > 0 ? (
+                <span className={styles.filesBadge}>{fileCount}</span>
+              ) : null}
+            </Button>
+            <Button className={styles.copyButton} type="button" variant="tool" onClick={copyLink}>
+              Copy link
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -381,7 +414,7 @@ export default function RealtimeEditor({
         </aside>
       ) : null}
 
-      <div className={styles.area}>
+      <div className={styles.area} data-files-open={filesOpen}>
         <div ref={editorHost} className={styles.host} />
         {blocked ? (
           <div className={styles.blocker} role="alert">
@@ -401,6 +434,14 @@ export default function RealtimeEditor({
             </section>
           </div>
         ) : null}
+        <DocumentsPanel
+          path={path}
+          open={filesOpen}
+          onClose={() => setFilesOpen(false)}
+          revision={filesRevision}
+          onChanged={announceFilesChanged}
+          onCountChange={setFileCount}
+        />
       </div>
 
       <footer className={styles.toolbar}>
