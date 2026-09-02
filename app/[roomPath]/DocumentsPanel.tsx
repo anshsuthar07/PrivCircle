@@ -41,14 +41,16 @@ interface Upload {
   documentId?: string;
 }
 
+/** Only used before the first listing arrives; the server is authoritative. */
 const DEFAULT_LIMITS: DocumentLimits = {
   maxFileBytes: 300 * 1024 * 1024,
   maxDocuments: 20,
-  maxTotalBytes: 1024 * 1024 * 1024,
+  maxTotalBytes: 300 * 1024 * 1024,
 };
 
 const LIST_POLL_MS = 45_000;
 const CLOCK_TICK_MS = 60_000;
+const PROGRESS_FLUSH_MS = 150;
 
 /** Above this size, parallel parts and per-part retries are worth their overhead. */
 const MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
@@ -97,6 +99,7 @@ export function DocumentsPanel({
   onChanged: () => void;
   onCountChange: (count: number) => void;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [documents, setDocuments] = useState<RoomDocument[]>([]);
@@ -108,8 +111,22 @@ export function DocumentsPanel({
   const [notice, setNotice] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState("");
+  const [wasOpen, setWasOpen] = useState(open);
   const [, setClock] = useState(0);
   const headingId = useId();
+  // Progress arrives per network chunk. Applying each one re-rendered the panel
+  // and the whole file list, so they are coalesced and flushed on a timer.
+  const progressRef = useRef(new Map<string, Partial<Upload>>());
+  const flushRef = useRef<number | null>(null);
+
+  // Adjusted during render rather than in an effect: a half-confirmed deletion
+  // must not still be waiting the next time the panel is opened, and an effect
+  // would render the stale state once before clearing it.
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (pendingRemoval) setPendingRemoval("");
+  }
 
   const patchUpload = useCallback((key: string, patch: Partial<Upload>) => {
     setUploads((current) =>
@@ -120,6 +137,30 @@ export function DocumentsPanel({
   const removeUpload = useCallback((key: string) => {
     setUploads((current) => current.filter((upload) => upload.key !== key));
   }, []);
+
+  const queueProgress = useCallback((key: string, patch: Partial<Upload>) => {
+    const pending = progressRef.current;
+    pending.set(key, { ...pending.get(key), ...patch });
+    if (flushRef.current !== null) return;
+    flushRef.current = window.setTimeout(() => {
+      flushRef.current = null;
+      const batch = new Map(pending);
+      pending.clear();
+      if (batch.size === 0) return;
+      setUploads((current) =>
+        current.map((upload) =>
+          batch.has(upload.key) ? { ...upload, ...batch.get(upload.key) } : upload,
+        ),
+      );
+    }, PROGRESS_FLUSH_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (flushRef.current !== null) window.clearTimeout(flushRef.current);
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -181,6 +222,26 @@ export function DocumentsPanel({
   useEffect(() => {
     if (open) headingRef.current?.focus();
   }, [open]);
+
+  // Below 900px this panel is drawn over the editor, and Escape is what anyone
+  // expects to dismiss something covering the page. It closes at every width so
+  // the behaviour does not change under the reader's feet at a breakpoint.
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    }
+    const node = panelRef.current;
+    node?.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      node?.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, open]);
+
 
   const startUpload = useCallback(
     async (file: File) => {
@@ -268,10 +329,11 @@ export function DocumentsPanel({
               lastLoaded = transferred;
               lastAt = now;
             }
-            patchUpload(key, patch);
+            queueProgress(key, patch);
           },
         });
 
+        progressRef.current.delete(key);
         patchUpload(key, { state: "finalizing", percentage: 100 });
 
         const complete = await fetch(
@@ -312,7 +374,7 @@ export function DocumentsPanel({
         });
       }
     },
-    [limits.maxFileBytes, onChanged, patchUpload, path, refresh, removeUpload],
+    [limits.maxFileBytes, onChanged, patchUpload, path, queueProgress, refresh, removeUpload],
   );
 
   const addFiles = useCallback(
@@ -325,6 +387,7 @@ export function DocumentsPanel({
   );
 
   async function removeDocument(document: RoomDocument) {
+    setPendingRemoval("");
     setNotice("");
     try {
       const response = await fetch(
@@ -361,6 +424,7 @@ export function DocumentsPanel({
   return (
     <aside
       id="room-files"
+      ref={panelRef}
       className={styles.panel}
       aria-labelledby={headingId}
       data-open={open}
@@ -533,15 +597,40 @@ export function DocumentsPanel({
                       Download
                     </a>
                     {document.uploadedBy === participantId ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="compact"
-                        onClick={() => void removeDocument(document)}
-                        aria-label={`Remove ${document.filename}`}
-                      >
-                        Remove
-                      </Button>
+                      pendingRemoval === document.id ? (
+                        // Removal deletes the bytes for everyone and cannot be
+                        // undone, so it asks once rather than acting on a
+                        // single mis-tap next to Download.
+                        <span className={styles.confirm} role="group" aria-label={`Confirm removing ${document.filename}`}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="compact"
+                            autoFocus
+                            onClick={() => void removeDocument(document)}
+                          >
+                            Delete
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="compact"
+                            onClick={() => setPendingRemoval("")}
+                          >
+                            Keep
+                          </Button>
+                        </span>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="compact"
+                          onClick={() => setPendingRemoval(document.id)}
+                          aria-label={`Remove ${document.filename}`}
+                        >
+                          Remove
+                        </Button>
+                      )
                     ) : null}
                   </div>
                 </li>

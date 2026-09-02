@@ -3,26 +3,36 @@ import Link from "next/link";
 import { CreateRoomForm } from "./components/CreateRoomForm";
 import styles from "./home.module.css";
 
+/**
+ * Each card leads with what someone gets and keeps the mechanism as the
+ * evidence for it. The previous set named the mechanisms only — "Argon2id
+ * passwords", "Late-join guard" — which read as a security datasheet and never
+ * told a first-time visitor what the product actually does.
+ */
 const features = [
   {
-    icon: "shield",
-    title: "Argon2id passwords",
-    description: "Strong password hashing for protected rooms.",
+    icon: "sync",
+    title: "Edit together, instantly",
+    description:
+      "Your whole group in one document, every keystroke shared live. Conflict-free, powered by Yjs.",
   },
   {
     icon: "private",
-    title: "No public footprint",
-    description: "No accounts, profiles, or searchable room directory.",
-  },
-  {
-    icon: "sync",
-    title: "Realtime collaboration",
-    description: "Yjs keeps concurrent edits in sync without conflicts.",
+    title: "Nothing to sign up for",
+    description:
+      "No account, no profile, no directory to browse. A room is just a link you share.",
   },
   {
     icon: "lock",
-    title: "Late-join guard",
-    description: "Protected content stays disconnected until authentication.",
+    title: "Locked means locked",
+    description:
+      "A protected room loads nothing until the password checks out on the server, not in the browser.",
+  },
+  {
+    icon: "shield",
+    title: "Gone when you say",
+    description:
+      "Pick 1 hour, 24 hours, 7 days, or keep it. The countdown restarts whenever the room is in use.",
   },
 ] as const;
 
@@ -35,7 +45,7 @@ export default async function Home({
   const initialAction = query.action === "join" ? "join" : "create";
 
   return (
-    <main className={styles.shell}>
+    <main className={styles.shell} id="main">
       <div className={`${styles.ambient} ${styles.ambientOne}`} />
       <div className={`${styles.ambient} ${styles.ambientTwo}`} />
 
@@ -60,8 +70,10 @@ export default async function Home({
               <span>not access.</span>
             </h1>
             <p className={styles.intro}>
-              Private live rooms for your circle. No account required, no public
-              directory, and protected content stays locked until you authenticate.
+              PrivCircle is a private code editor for your group. Create a room,
+              send the link, edit together in real time, and share files — no
+              account, no public directory, and nothing loaded until you are let
+              in.
             </p>
           </div>
         </section>
@@ -75,7 +87,10 @@ export default async function Home({
         <section className={styles.proof} aria-labelledby="proof-title">
           <div className={styles.proofHeader}>
             <h2 id="proof-title">Built for focused collaboration</h2>
-            <p>Explicit access, protected collaboration, and no public discovery.</p>
+            <p>
+              Deliberately contained: one shared document, one group, and
+              attached files that clean themselves up.
+            </p>
           </div>
           <div className={`${styles.featureGrid} feature-grid`}>
             {features.map((feature) => (

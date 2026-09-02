@@ -89,6 +89,6 @@ export async function POST(
         { status: 401 },
       );
     }
-    return serviceError(error);
+    return serviceError(error, "rooms.auth");
   }
 }

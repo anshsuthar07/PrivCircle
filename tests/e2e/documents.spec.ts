@@ -224,8 +224,13 @@ for (const variant of [
     expect(received.length).toBe(body.length);
     expect(received.subarray(0, marker.length).toString()).toBe(marker);
 
-    // Removing it should take it out of the room immediately.
+    // Removing it should take it out of the room immediately. Deletion is
+    // irreversible and shared, so it asks once before acting.
     await panel.getByRole("button", { name: `Remove ${filename}` }).click();
+    await panel
+      .getByRole("group", { name: `Confirm removing ${filename}` })
+      .getByRole("button", { name: "Delete" })
+      .click();
     await expect(panel.locator("a[download]")).toHaveCount(0, { timeout: 30_000 });
 
     const afterDelete = await page.request.get(href!);

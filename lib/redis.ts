@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { getRequiredEnv } from "./config";
+import { reportErrorThrottled } from "./observability";
 
 declare global {
   var __privCircleRedis: Redis | undefined;
@@ -16,8 +17,11 @@ export function getRedis() {
       },
     });
 
-    globalThis.__privCircleRedis.on("error", () => {
-      // Deliberately silent: credentials and command payloads never enter logs.
+    globalThis.__privCircleRedis.on("error", (error) => {
+      // Throttled and redacted: a reconnect loop must stay visible without
+      // filling the log, and a driver message must never carry the URL's
+      // credentials. Command payloads are still never logged.
+      reportErrorThrottled("redis.connection", error);
     });
   }
 

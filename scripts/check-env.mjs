@@ -128,6 +128,15 @@ if (environment.CRON_SECRET && environment.CRON_SECRET.length < 32) {
   errors.push("CRON_SECRET must contain at least 32 characters.");
 }
 
+// Inlined into the client bundle at build time, so a bad value ships to the
+// browser as well as the server. At least two people, or a room is not shared.
+if (environment.NEXT_PUBLIC_ROOM_CAPACITY) {
+  const capacity = Number(environment.NEXT_PUBLIC_ROOM_CAPACITY);
+  if (!(Number.isSafeInteger(capacity) && capacity >= 2)) {
+    errors.push("NEXT_PUBLIC_ROOM_CAPACITY must be a whole number of 2 or more.");
+  }
+}
+
 for (const name of ["ROOM_DOCUMENT_LIMIT", "ROOM_DOCUMENT_TOTAL_BYTES", "DOCUMENT_CLEANUP_BATCH"]) {
   const value = environment[name];
   if (value && !(Number.isSafeInteger(Number(value)) && Number(value) > 0)) {

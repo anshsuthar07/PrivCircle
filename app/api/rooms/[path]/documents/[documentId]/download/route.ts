@@ -74,6 +74,6 @@ export async function GET(
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
     return withSession(response, authorization.sessionToken);
   } catch (error) {
-    return serviceError(error);
+    return serviceError(error, "documents.download");
   }
 }

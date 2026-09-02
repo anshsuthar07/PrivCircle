@@ -259,3 +259,19 @@
     display: none;
   }
 }
+
+/* The three constraints someone needs before they commit to a room, rather
+   than after a third person is turned away or a paste stops saving. */
+.limits {
+  margin-bottom: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption);
+  line-height: 16px;
+}
+
+/* Inline links must not rely on colour alone to be recognisable. */
+.securityNote a,
+.formError a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

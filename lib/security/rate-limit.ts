@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getRequiredEnv } from "@/lib/config";
 import { getRedis } from "@/lib/redis";
 import { keys } from "@/lib/storage/keys";
+import { retryAfterLabel } from "@/lib/ui-labels";
 
 export class RateLimitError extends Error {
   retryAfter: number;
@@ -12,8 +13,25 @@ export class RateLimitError extends Error {
     this.name = "RateLimitError";
     this.retryAfter = retryAfter;
   }
+
+  /**
+   * The wait is already known here, so it is stated rather than left to the
+   * caller to guess. "Please wait and try again" gave a user no way to tell a
+   * ten-second pause from a ten-minute one.
+   */
+  get userMessage() {
+    return `Too many requests. Try again in ${retryAfterLabel(this.retryAfter)}.`;
+  }
 }
 
+/**
+ * Identifies the caller for rate limiting.
+ *
+ * On Vercel the edge network overwrites `x-forwarded-for` with the real client
+ * address, so the first entry is trustworthy — verified by confirming that a
+ * spoofed header does not reset a limit. Behind any proxy that *appends*
+ * instead of overwriting, this would need to read from the right-hand side.
+ */
 export function requestSubject(request: NextRequest) {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const raw = forwarded || request.headers.get("x-real-ip") || "unknown";
@@ -41,5 +59,24 @@ export async function enforceRateLimit(input: {
 
   if (Number(result[0]) > input.limit) {
     throw new RateLimitError(Math.max(1, Number(result[1])));
+  }
+}
+
+/**
+ * Reads a limit without consuming from it.
+ *
+ * Used where a request must be validated before it is allowed to spend quota,
+ * so a rejected request cannot exhaust a budget it never used.
+ */
+export async function peekRateLimit(input: {
+  scope: string;
+  subject: string;
+  limit: number;
+}) {
+  const redis = getRedis();
+  const key = keys.rateLimit(input.scope, input.subject);
+  const [count, ttl] = await Promise.all([redis.get(key), redis.ttl(key)]);
+  if (Number(count || 0) >= input.limit) {
+    throw new RateLimitError(Math.max(1, Number(ttl) > 0 ? Number(ttl) : 60));
   }
 }

@@ -9,6 +9,7 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
 } from "@/lib/password-policy";
+import { ROOM_CAPACITY } from "@/lib/types";
 import {
   getRoomPathIssue,
   normalizeRoomPath,
@@ -34,11 +35,28 @@ interface CreateRoomResponse {
   path: string;
 }
 
-function randomPath() {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+const PATH_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * Generates a room name with a uniform distribution.
+ *
+ * A plain `byte % 36` is biased: 256 is not a multiple of 36, so the first four
+ * letters came up meaningfully more often than the rest. Bytes at or above the
+ * largest usable multiple are discarded instead, which matches what the server
+ * does with `randomInt`.
+ */
+function randomPath(length = 12) {
+  const limit = 256 - (256 % PATH_ALPHABET.length);
+  const result: string[] = [];
+  const buffer = new Uint8Array(length * 2);
+  while (result.length < length) {
+    crypto.getRandomValues(buffer);
+    for (const byte of buffer) {
+      if (result.length === length) break;
+      if (byte < limit) result.push(PATH_ALPHABET[byte % PATH_ALPHABET.length]);
+    }
+  }
+  return result.join("");
 }
 
 function pathIssueMessage(issue: RoomPathIssue) {
@@ -208,6 +226,33 @@ export function CreateRoomForm({
 
   const pathDescriptionId = displayedPathError ? "room-link-error" : "room-link-hint";
 
+  /**
+   * Why the submit button is unavailable.
+   *
+   * A disabled control with no explanation is a dead end — nothing is announced
+   * and nothing says what is missing. The reason is rendered next to it and
+   * referenced by the button itself.
+   */
+  const submitBlockedReason =
+    // Silent when the field is already showing the reason: saying it twice is
+    // noise, and two live copies of the same sentence is worse than one.
+    actionReady || displayedPathError
+      ? ""
+      : action === "join"
+      ? path.trim()
+          ? "Enter a valid room name or a PrivCircle link to continue."
+          : "Enter the room name or link you were sent."
+        : "Finish the password requirements above to continue.";
+
+  // Shown once a custom name is chosen without a password: a name someone can
+  // think of is a name someone can try, and an unprotected room admits anyone
+  // who reaches it.
+  const showGuessableNotice =
+    action === "create" &&
+    !passwordProtected &&
+    Boolean(normalizedPath) &&
+    createPathIssue === null;
+
   return (
     <form
       className={`${styles.form} create-form`}
@@ -312,8 +357,16 @@ export function CreateRoomForm({
               aria-errormessage={displayedPathError ? "room-link-error" : undefined}
             />
           </div>
-          <InfoTooltip label="Room naming guidance">
-            Leave blank—we&apos;ll create a random room name for you.
+          <InfoTooltip
+            label={
+              action === "create"
+                ? "Room naming guidance"
+                : "Joining an existing room"
+            }
+          >
+            {action === "create"
+              ? "Leave blank—we'll create a random room name for you."
+              : "Paste the full link you were sent, or type just the room name from the end of it."}
           </InfoTooltip>
         </div>
       </FormField>
@@ -415,6 +468,13 @@ export function CreateRoomForm({
         </FormField>
       ) : null}
 
+      {showGuessableNotice ? (
+        <StatusMessage className={styles.formError} tone="warning">
+          Anyone who guesses <strong>/{normalizedPath}</strong> can open this room.
+          Add a password if the contents are sensitive.
+        </StatusMessage>
+      ) : null}
+
       {formError ? (
         <StatusMessage className={styles.formError} tone="error">
           {formError}
@@ -436,6 +496,7 @@ export function CreateRoomForm({
         size="main"
         disabled={submitting || !actionReady}
         aria-busy={submitting}
+        aria-describedby={submitBlockedReason ? "submit-blocked" : undefined}
       >
         {submitting
           ? action === "create"
@@ -449,10 +510,31 @@ export function CreateRoomForm({
         {!submitting ? <span aria-hidden="true">→</span> : null}
       </Button>
 
-      <p className={styles.securityNote}>
-        PrivCircle uses server-enforced access controls and encrypted transport. It is
-        not end-to-end encrypted. <Link href="/security">How security works</Link>
-      </p>
+      {/* Explains the disabled button to anyone who cannot see the criteria
+          checklist above it. Visually hidden because that checklist already
+          says the same thing on screen, and because it must not displace the
+          action it describes. */}
+      {submitBlockedReason ? (
+        <p className="sr-only" id="submit-blocked" role="status">
+          {submitBlockedReason}
+        </p>
+      ) : null}
+
+      <div className={styles.securityNote}>
+        {/* The three constraints someone needs before committing to a room,
+            stated at the point of decision rather than discovered by running
+            into them. */}
+        {action === "create" ? (
+          <p className={styles.limits}>
+            Up to {ROOM_CAPACITY} people · 1 MB of text · 300 MB of files, deleted
+            after 24h
+          </p>
+        ) : null}
+        <p>
+          Server-enforced access and encrypted transport. Not end-to-end
+          encrypted. <Link href="/security">How security works</Link>
+        </p>
+      </div>
     </form>
   );
 }

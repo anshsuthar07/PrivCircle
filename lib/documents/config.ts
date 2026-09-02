@@ -37,9 +37,16 @@ export function maxDocumentsPerRoom() {
   return positiveInteger("ROOM_DOCUMENT_LIMIT", 20);
 }
 
-/** Maximum aggregate bytes reserved by one room's active documents. */
+/**
+ * Maximum aggregate bytes reserved by one room's active documents.
+ *
+ * Held at the same 300 MiB as the per-file ceiling, so a room's whole file
+ * allowance is one maximum-size upload. A larger budget per room made it
+ * possible for a couple of rooms to consume the entire hosting quota between
+ * them, which takes file sharing down for everybody else.
+ */
 export function maxRoomDocumentBytes() {
-  return positiveInteger("ROOM_DOCUMENT_TOTAL_BYTES", 1024 * 1024 * 1024);
+  return positiveInteger("ROOM_DOCUMENT_TOTAL_BYTES", MAX_DOCUMENT_BYTES);
 }
 
 /** Rows processed per cleanup pass, so a single run stays inside a function budget. */

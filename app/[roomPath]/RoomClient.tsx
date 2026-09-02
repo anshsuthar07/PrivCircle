@@ -45,12 +45,21 @@ async function readPayload(response: Response) {
 
 export function RoomClient({ path }: { path: string }) {
   const controllerRef = useRef<AbortController | null>(null);
+  // The token is mirrored into a ref so `getAccessToken` can stay referentially
+  // stable. It is read inside the callback body, never captured, so a refresh
+  // cannot serve a stale token — see the note on `getAccessToken` below.
+  const accessRef = useRef<AccessPayload | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [metadata, setMetadata] = useState<SafeRoomMetadata | null>(null);
   const [access, setAccess] = useState<AccessPayload | null>(null);
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const applyAccess = useCallback((next: AccessPayload | null) => {
+    accessRef.current = next;
+    setAccess(next);
+  }, []);
 
   const requestAccess = useCallback(async (): Promise<AccessPayload> => {
     const response = await fetch(`/api/rooms/${encodeURIComponent(path)}/access`, {
@@ -63,9 +72,9 @@ export function RoomClient({ path }: { path: string }) {
       throw new Error(String(payload.code || "ACCESS_FAILED"));
     }
     const nextAccess = payload as unknown as AccessPayload;
-    setAccess(nextAccess);
+    applyAccess(nextAccess);
     return nextAccess;
-  }, [path]);
+  }, [applyAccess, path]);
 
   const enterRoom = useCallback(async () => {
     controllerRef.current?.abort();
@@ -116,15 +125,27 @@ export function RoomClient({ path }: { path: string }) {
     };
   }, [enterRoom]);
 
+  /**
+   * Supplies the realtime provider with a valid token.
+   *
+   * This identity must never change while the room is open. The editor rebuilds
+   * itself whenever this function changes, and refreshing the token used to do
+   * exactly that: the refresh set state, the state changed this callback, and
+   * the change tore down the Y.Doc, the socket, and the whole undo history
+   * roughly every fifteen minutes. Reading the current token from a ref keeps
+   * the identity fixed for the lifetime of the room while still returning the
+   * newest token on every call.
+   */
   const getAccessToken = useCallback(async () => {
+    const current = accessRef.current;
     if (
-      access &&
-      new Date(access.tokenExpiresAt).getTime() - Date.now() > 30_000
+      current &&
+      new Date(current.tokenExpiresAt).getTime() - Date.now() > 30_000
     ) {
-      return access.accessToken;
+      return current.accessToken;
     }
     return (await requestAccess()).accessToken;
-  }, [access, requestAccess]);
+  }, [requestAccess]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,15 +165,22 @@ export function RoomClient({ path }: { path: string }) {
       const payload = await readPayload(response);
       if (!response.ok) {
         if (response.status === 429) {
-          setMessage("Too many attempts. Wait a moment before trying again.");
+          // The server already computed the remaining window, so it is shown
+          // rather than replaced with an unquantified "wait a moment".
+          setMessage(
+            typeof payload.message === "string"
+              ? payload.message
+              : "Too many attempts. Try again in about 10 minutes.",
+          );
         } else if (response.status >= 500) {
           setMessage("The room service is unavailable. Please try again.");
         } else {
           setMessage("Incorrect password. Please try again.");
+          setPassword("");
         }
         return;
       }
-      setAccess(payload as unknown as AccessPayload);
+      applyAccess(payload as unknown as AccessPayload);
       setPassword("");
       setPhase("granted");
     } catch {
@@ -171,7 +199,7 @@ export function RoomClient({ path }: { path: string }) {
           participantId={access.participantId}
           getAccessToken={getAccessToken}
           onAccessExpired={() => {
-            setAccess(null);
+            applyAccess(null);
             void enterRoom();
           }}
         />
@@ -181,7 +209,7 @@ export function RoomClient({ path }: { path: string }) {
 
   if (phase === "locked") {
     return (
-      <main className={`${styles.shell} room-gate-shell`}>
+      <main className={`${styles.shell} room-gate-shell`} id="main">
         <section
           className={`${styles.card} ${styles.gate} room-gate`}
           aria-labelledby="private-room-title"
@@ -278,7 +306,7 @@ function RoomState({
   }[variant];
 
   return (
-    <main className={`${styles.shell} room-gate-shell`}>
+    <main className={`${styles.shell} room-gate-shell`} id="main">
       <section
         className={`${styles.card} ${styles.state} room-state`}
         aria-live="polite"

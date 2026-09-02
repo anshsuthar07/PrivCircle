@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ROOM_CAPACITY } from "@/lib/types";
 import Link from "next/link";
 import styles from "./security.module.css";
 
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function SecurityPage() {
   return (
-    <main className={styles.shell}>
+    <main className={styles.shell} id="main">
       <article className={styles.page}>
         <Link className={styles.brand} href="/">
           ← PRIVCIRCLE
@@ -52,10 +53,34 @@ export default function SecurityPage() {
           <section className={styles.section}>
             <h2>Transport and collaboration</h2>
             <p>
-              Production traffic uses HTTPS and secure WebSockets. Concurrent access
-              limits are enforced operationally, and participants reconnect through
-              short-lived, room-bound access tokens.
+              Production traffic uses HTTPS and secure WebSockets. Participants
+              reconnect through short-lived, room-bound access tokens, and a room
+              admits <strong>up to {ROOM_CAPACITY} people at a time</strong> — the
+              next participant is refused by the server, not merely hidden.
             </p>
+          </section>
+
+          <section className={styles.section} id="files">
+            <h2>Temporary files</h2>
+            <p>
+              Files attached to a room are stored by the hosting provider and are
+              reachable only after the same authorization the room itself requires.
+              They are never rendered or executed by PrivCircle.
+            </p>
+            <ul>
+              <li>
+                A room holds <strong>300 MB of files in total</strong>, and each
+                file is deleted <strong>24 hours after it is uploaded</strong>.
+                This is its own clock, independent of the room&apos;s retention.
+              </li>
+              <li>
+                A file therefore <strong>can outlive a shorter room</strong> — a
+                1-hour room&apos;s files are reclaimed on the file&apos;s schedule,
+                or sooner once the room itself is gone. They are unreachable in
+                the meantime, because every request resolves the room first.
+              </li>
+              <li>Only the person who shared a file can remove it early.</li>
+            </ul>
           </section>
 
           <section className={styles.section} id="retention">
@@ -68,6 +93,11 @@ export default function SecurityPage() {
               <li>
                 <strong>No automatic expiry</strong> stores room data until operator
                 removal, database removal, or provider limits intervene.
+              </li>
+              <li>
+                The shared document is capped at <strong>1 MB</strong>. Beyond
+                that the room tells you it has stopped saving rather than
+                silently discarding the excess.
               </li>
               <li>PrivCircle currently has no self-service room deletion.</li>
             </ul>

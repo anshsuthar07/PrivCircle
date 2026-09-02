@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ConfigurationError } from "./config";
+import { reportError } from "./observability";
 import { RateLimitError } from "./security/rate-limit";
 
 export function noStoreJson(body: unknown, init?: ResponseInit) {
@@ -9,10 +10,18 @@ export function noStoreJson(body: unknown, init?: ResponseInit) {
   return response;
 }
 
-export function serviceError(error: unknown) {
+/**
+ * The single failure response for an unrecoverable server-side error.
+ *
+ * The body stays deliberately uninformative — a caller learns only that the
+ * service is unavailable. `scope` is for the operator: it identifies the
+ * operation that failed so the log line is actionable. It never carries user
+ * input, and the error itself is redacted before it is written.
+ */
+export function serviceError(error: unknown, scope = "unknown") {
   if (error instanceof RateLimitError) {
     return noStoreJson(
-      { code: "RATE_LIMITED", message: "Too many requests. Please wait and try again." },
+      { code: "RATE_LIMITED", message: error.userMessage },
       {
         status: 429,
         headers: { "Retry-After": String(error.retryAfter) },
@@ -21,12 +30,14 @@ export function serviceError(error: unknown) {
   }
 
   if (error instanceof ConfigurationError) {
+    reportError(`${scope}.configuration`, error);
     return noStoreJson(
       { code: "SERVICE_UNAVAILABLE", message: "Room storage is not configured." },
       { status: 503 },
     );
   }
 
+  reportError(scope, error);
   return noStoreJson(
     { code: "SERVICE_UNAVAILABLE", message: "The room service is unavailable." },
     { status: 503 },

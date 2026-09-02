@@ -15,6 +15,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+/**
+ * How long a freshly upgraded socket may stay silent.
+ *
+ * A real client sends its authentication frame as soon as the socket opens.
+ * Without a deadline, a socket that never speaks was held for the full function
+ * duration, so opening them in a loop reserved concurrency for five minutes a
+ * time at almost no cost to the caller. Closing a silent socket makes that
+ * pointless while leaving a slow but genuine client far more time than it needs.
+ */
+const FIRST_MESSAGE_TIMEOUT_MS = 15_000;
+const SILENT_SOCKET_CLOSE_CODE = 4408;
+
 function toUint8Array(data: RawData) {
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
   if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data));
@@ -59,11 +71,29 @@ export async function GET(
         socket as unknown as WebSocketLike,
         realtimeRequest,
       );
-      socket.on("message", (data) => connection.handleMessage(toUint8Array(data)));
-      socket.on("close", (code, reason) =>
-        connection.handleClose({ code, reason: reason.toString() }),
-      );
-      socket.on("error", () => connection.handleClose({ code: 1011, reason: "socket-error" }));
+
+      const silenceTimer = setTimeout(() => {
+        try {
+          socket.close(SILENT_SOCKET_CLOSE_CODE, "AUTH_TIMEOUT");
+        } catch {
+          // The socket is already gone; nothing left to release.
+        }
+      }, FIRST_MESSAGE_TIMEOUT_MS);
+      // `unref` where available so the deadline never keeps a process alive.
+      silenceTimer.unref?.();
+
+      socket.on("message", (data) => {
+        clearTimeout(silenceTimer);
+        connection.handleMessage(toUint8Array(data));
+      });
+      socket.on("close", (code, reason) => {
+        clearTimeout(silenceTimer);
+        connection.handleClose({ code, reason: reason.toString() });
+      });
+      socket.on("error", () => {
+        clearTimeout(silenceTimer);
+        connection.handleClose({ code: 1011, reason: "socket-error" });
+      });
     },
     { maxPayload: 1024 * 1024 },
   );

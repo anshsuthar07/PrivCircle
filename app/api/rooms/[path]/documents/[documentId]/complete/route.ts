@@ -114,6 +114,6 @@ export async function POST(
       authorization.sessionToken,
     );
   } catch (error) {
-    return serviceError(error);
+    return serviceError(error, "documents.complete");
   }
 }

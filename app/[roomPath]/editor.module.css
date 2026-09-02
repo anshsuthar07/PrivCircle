@@ -1,6 +1,16 @@
 .shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /*
+   * Four explicit rows, each claimed by name.
+   *
+   * Relying on source order breaks the moment a row is conditional: the
+   * persistence banner is only rendered when the server says it cannot store
+   * the room, and without an explicit placement it would take the `1fr` row and
+   * collapse the editor to its content height exactly when someone most needs
+   * to see and copy their work. The banner's row collapses to zero when it is
+   * absent.
+   */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: 100%;
   min-width: 0;
   height: 100vh;
@@ -27,6 +37,7 @@
 }
 
 .header {
+  grid-row: 1;
   min-height: 64px;
   border-bottom-style: solid;
   border-bottom-width: 1px;
@@ -51,6 +62,7 @@
 
 .roomName {
   min-width: 0;
+  font-weight: 500;
   overflow: hidden;
   color: var(--color-text-muted);
   font: 500 12px/18px var(--font-geist-mono), monospace;
@@ -60,6 +72,8 @@
 
 .presence,
 .connection,
+.retention,
+.keyboardHint,
 .roomKind {
   display: inline-flex;
   min-width: 0;
@@ -140,6 +154,7 @@
 
 .area {
   position: relative;
+  grid-row: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
@@ -197,13 +212,19 @@
   outline: none;
 }
 
+/* Covers the whole shell, not just the editing area: the header and toolbar
+   used to stay interactive underneath a modal alert. `overflow: auto` keeps the
+   card reachable on a short or landscape viewport, where it was previously
+   clipped by an ancestor that hid its overflow. */
 .blocker {
-  position: absolute;
-  z-index: 5;
+  position: fixed;
+  z-index: 10;
   inset: 0;
   display: grid;
   place-content: center;
-  padding: var(--space-6);
+  overflow: auto;
+  padding: max(var(--space-6), env(safe-area-inset-top)) var(--space-6)
+    max(var(--space-6), env(safe-area-inset-bottom));
   background: var(--color-backdrop);
 }
 
@@ -216,9 +237,11 @@
   box-shadow: var(--shadow-elevated);
 }
 
-.blockerCard h1 {
+.blockerCard h2 {
   font-size: var(--font-state-heading);
+  font-weight: 600;
   line-height: 36px;
+  letter-spacing: -0.03em;
 }
 
 .blockerCard p {
@@ -267,6 +290,7 @@
 }
 
 .toolbar {
+  grid-row: 4;
   min-height: 56px;
   border-top-style: solid;
   border-top-width: 1px;
@@ -333,7 +357,6 @@
     padding-left: var(--space-2);
   }
 
-  .roomKind,
   .desktopTools {
     display: none;
   }
@@ -371,8 +394,15 @@
   }
 
   .presence {
-    grid-column: 1 / -1;
+    grid-column: 1;
     grid-row: 2;
+  }
+
+  .retention {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    max-width: 46vw;
   }
 
   .invite {
@@ -387,5 +417,69 @@
 
   .connection {
     white-space: nowrap;
+  }
+}
+
+/* Announced when the server tells us it cannot persist the room. It sits above
+   the editor rather than inside it so it survives every layout breakpoint. */
+.persistence {
+  position: relative;
+  z-index: 3;
+  grid-row: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-error-border);
+  padding: var(--space-3) var(--space-5);
+  color: var(--color-text-secondary);
+  background: var(--color-error-surface);
+  font-size: var(--font-small);
+  line-height: 19px;
+}
+
+.persistenceIcon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-full);
+  color: var(--color-primary-contrast);
+  background: var(--color-error);
+  font-weight: 700;
+}
+
+.retention {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shown only while the editor holds focus, so the keyboard escape route is
+   visible to sighted keyboard users at the moment it becomes relevant. */
+.keyboardHint {
+  opacity: 0;
+  transition: opacity var(--motion-standard) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.keyboardHint[data-visible="true"] {
+  opacity: 1;
+}
+
+.connection[data-state="not-saving"] .connectionDot {
+  background: var(--color-error);
+  box-shadow: 0 0 0 3px var(--color-error-surface);
+}
+
+@media (max-width: 900px) {
+  .keyboardHint {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .persistence {
+    padding: var(--space-3);
   }
 }

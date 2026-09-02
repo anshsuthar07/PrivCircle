@@ -6,7 +6,8 @@ export type ConnectionState =
   | "synced"
   | "saving"
   | "reconnecting"
-  | "offline";
+  | "offline"
+  | "not-saving";
 
 export function connectionLabel(state: ConnectionState) {
   const labels: Record<ConnectionState, string> = {
@@ -16,9 +17,55 @@ export function connectionLabel(state: ConnectionState) {
     saving: "Saving…",
     reconnecting: "Reconnecting…",
     offline: "Offline",
+    "not-saving": "Not saving",
   };
 
   return labels[state];
+}
+
+/** Whether the server has told us it can still persist this room. */
+export type PersistenceState = "ok" | "document-too-large" | "storage-failed";
+
+export interface ConnectionSignals {
+  online: boolean;
+  connected: boolean;
+  everConnected: boolean;
+  synced: boolean;
+  unsyncedCount: number;
+  persistence: PersistenceState;
+}
+
+/**
+ * Reduces every realtime signal to the single thing the status pill claims.
+ *
+ * These signals used to be written independently by three provider callbacks
+ * that fire in no guaranteed order, so whichever landed last won: a fully
+ * synchronized room could sit on "Synchronizing…", a freshly opened one
+ * announced "Saving…" before anyone had typed, and going offline with pending
+ * edits still claimed "Saving…" — the exact claim this project's labels are
+ * written to avoid. Deriving the label from all of them removes the race, and
+ * makes the precedence explicit and testable.
+ *
+ * Order matters: a room the server cannot persist must never read as saved,
+ * even while the participants are perfectly in sync with each other.
+ */
+export function deriveConnectionState(signals: ConnectionSignals): ConnectionState {
+  if (signals.persistence !== "ok") return "not-saving";
+  if (!signals.online) return "offline";
+  if (!signals.connected) return signals.everConnected ? "reconnecting" : "connecting";
+  if (!signals.synced) return "synchronizing";
+  return signals.unsyncedCount > 0 ? "saving" : "synced";
+}
+
+/** The banner shown when the server has told us it cannot store the room. */
+export function persistenceNotice(state: PersistenceState) {
+  if (state === "document-too-large") {
+    return "This room has reached its 1 MB content limit. Edits are still shared with everyone here, but they are no longer being saved — copy anything you need to keep.";
+  }
+  if (state === "storage-failed") {
+    return "PrivCircle cannot save this room right now. Edits are still shared live and saving will resume automatically — keep this tab open, and copy anything you cannot lose.";
+  }
+  return "";
 }
 
 export function expirationLabel(metadata: Pick<SafeRoomMetadata, "expiration">) {
@@ -71,4 +118,20 @@ export function expiryLabel(expiresAt: string, now: number = Date.now()) {
   const minutes = Math.floor(remaining / 60_000);
   if (minutes < 60) return minutes < 10 ? "Expires soon" : `Expires in ${minutes}m`;
   return `Expires in ${Math.floor(minutes / 60)}h`;
+}
+
+/**
+ * How long a rate-limited caller must wait, in words.
+ *
+ * The server already knows the remaining window, so the UI states it instead of
+ * asking the user to guess whether "try again later" means seconds or minutes.
+ */
+export function retryAfterLabel(seconds: number) {
+  const total = Math.max(1, Math.ceil(seconds));
+  if (total <= 45) return "a few seconds";
+  const minutes = Math.round(total / 60);
+  if (minutes <= 1) return "about a minute";
+  if (minutes < 60) return `about ${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  return hours <= 1 ? "about an hour" : `about ${hours} hours`;
 }

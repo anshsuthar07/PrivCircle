@@ -28,8 +28,15 @@ import { tags } from "@lezer/highlight";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
-import type { SafeRoomMetadata } from "@/lib/types";
-import { connectionLabel, expirationLabel, type ConnectionState } from "@/lib/ui-labels";
+import { ROOM_CAPACITY, type SafeRoomMetadata } from "@/lib/types";
+import {
+  connectionLabel,
+  deriveConnectionState,
+  expirationLabel,
+  persistenceNotice,
+  type PersistenceState,
+} from "@/lib/ui-labels";
+import { decodePersistence, HEARTBEAT } from "@/lib/realtime/messages";
 import { Button, Select } from "@/app/components/ui/controls";
 import { DocumentsPanel } from "./DocumentsPanel";
 import styles from "./editor.module.css";
@@ -102,6 +109,33 @@ function websocketUrl(path: string) {
   return `${protocol}//${window.location.host}/api/ws/${encodeURIComponent(path)}`;
 }
 
+const KEYBOARD_HINT_ID = "editor-keyboard-hint";
+
+/**
+ * Hocuspocus reports a denial as free text, so the seat limit is matched
+ * case-insensitively and treated as the exception rather than the default: an
+ * unrecognized reason is an access problem, which offers the user a real
+ * recovery path instead of telling them the room is full.
+ */
+function isRoomFull(reason: string) {
+  return /room_full/i.test(reason);
+}
+
+/** Below this width the files panel is drawn over the editor rather than beside it. */
+const FILES_OVERLAY_QUERY = "(max-width: 900px)";
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const sync = () => setMatches(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, [query]);
+  return matches;
+}
+
 export default function RealtimeEditor({
   path,
   metadata,
@@ -128,8 +162,15 @@ export default function RealtimeEditor({
     () => typeof window !== "undefined" && localStorage.getItem("privcircle:word-wrap") === "true",
   );
   const [participants, setParticipants] = useState(0);
+  // Independent signals. The status label is derived from all of them in one
+  // place rather than written by whichever provider callback fires last.
   const [providerConnected, setProviderConnected] = useState(false);
-  const [connection, setConnection] = useState<ConnectionState>("connecting");
+  const [everConnected, setEverConnected] = useState(false);
+  const [synced, setSynced] = useState(false);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
+  const [online, setOnline] = useState(true);
+  const [persistence, setPersistence] = useState<PersistenceState>("ok");
+  const [editorFocused, setEditorFocused] = useState(false);
   const [blocked, setBlocked] = useState<"full" | "access" | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [copyFallback, setCopyFallback] = useState(false);
@@ -140,6 +181,7 @@ export default function RealtimeEditor({
   const [filesOpen, setFilesOpen] = useState(false);
   const [fileCount, setFileCount] = useState(0);
   const [filesRevision, setFilesRevision] = useState(0);
+  const filesOverlay = useMediaQuery(FILES_OVERLAY_QUERY);
 
   useEffect(() => {
     const currentUrl = window.location.href;
@@ -152,6 +194,15 @@ export default function RealtimeEditor({
       }
     });
   }, [path]);
+
+  // The live region is an announcement, not a permanent label: leaving the last
+  // message in it meant a screen reader re-read "Room link copied." for the rest
+  // of the session.
+  useEffect(() => {
+    if (!copyStatus) return;
+    const timer = window.setTimeout(() => setCopyStatus(""), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [copyStatus]);
 
   useEffect(() => {
     const storedWrap = localStorage.getItem("privcircle:word-wrap") === "true";
@@ -171,7 +222,7 @@ export default function RealtimeEditor({
     undoRef.current = undoManager;
     wrapCompartmentRef.current = wrapCompartment;
 
-    let connectedOnce = false;
+    setOnline(navigator.onLine);
     let currentlyConnected = false;
     let view: EditorView | null = null;
     let updateParticipants = () => undefined;
@@ -182,29 +233,34 @@ export default function RealtimeEditor({
       token: getAccessToken,
       flushDelay: 25,
       onAuthenticationFailed({ reason }) {
-        setBlocked(reason.includes("ROOM_FULL") ? "full" : "access");
+        setBlocked(isRoomFull(reason) ? "full" : "access");
       },
       onStatus({ status }) {
         currentlyConnected = status === "connected";
         setProviderConnected(currentlyConnected);
         if (currentlyConnected) {
-          connectedOnce = true;
-          setConnection("synchronizing");
+          setEverConnected(true);
           queueMicrotask(updateParticipants);
         } else {
           setParticipants(0);
-          setConnection(navigator.onLine ? (connectedOnce ? "reconnecting" : "connecting") : "offline");
+          setSynced(false);
         }
       },
       onSynced({ state }) {
         if (!state) return;
         const sharedLanguage = settings.get("language");
         if (!isLanguage(sharedLanguage)) settings.set("language", "javascript");
-        setConnection("synced");
+        setSynced(true);
         queueMicrotask(updateParticipants);
       },
       onUnsyncedChanges({ number }) {
-        setConnection(number > 0 ? "saving" : "synced");
+        setUnsyncedCount(number);
+      },
+      // The server's only way to say it could not store what everyone just
+      // agreed on. Without it the room reads as "Synced" and silently reverts.
+      onStateless({ payload }) {
+        const message = decodePersistence(payload);
+        if (message) setPersistence(message.code);
       },
     });
 
@@ -243,8 +299,8 @@ export default function RealtimeEditor({
 
     const notifyFilesChanged = () => setFilesRevision((value) => value + 1);
 
-    const handleOffline = () => setConnection("offline");
-    const handleOnline = () => setConnection(connectedOnce ? "reconnecting" : "connecting");
+    const handleOffline = () => setOnline(false);
+    const handleOnline = () => setOnline(true);
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
     provider.awareness?.on("change", updateParticipants);
@@ -275,7 +331,22 @@ export default function RealtimeEditor({
           EditorView.contentAttributes.of({
             "aria-label": "Shared code editor",
             "aria-multiline": "true",
+            // Tab indents inside a code editor, so it cannot also move focus.
+            // The escape route exists, but it is useless if nobody is told
+            // about it — which is exactly what WCAG 2.1.2 requires here.
+            "aria-describedby": KEYBOARD_HINT_ID,
+            "aria-keyshortcuts": "Escape",
             spellcheck: "false",
+          }),
+          EditorView.domEventHandlers({
+            focus: () => {
+              setEditorFocused(true);
+              return false;
+            },
+            blur: () => {
+              setEditorFocused(false);
+              return false;
+            },
           }),
           EditorView.theme({
             "&": { height: "100%", color: "var(--color-text-primary)", backgroundColor: "var(--color-bg)" },
@@ -293,7 +364,7 @@ export default function RealtimeEditor({
     editorViewRef.current = view;
 
     const heartbeat = window.setInterval(() => {
-      if (provider.isAuthenticated) provider.sendStateless("heartbeat");
+      if (provider.isAuthenticated) provider.sendStateless(HEARTBEAT);
     }, 25_000);
 
     return () => {
@@ -362,24 +433,39 @@ export default function RealtimeEditor({
     details.querySelector<HTMLElement>("summary")?.focus();
   }
 
+  const connection = deriveConnectionState({
+    online,
+    connected: providerConnected,
+    everConnected,
+    synced,
+    unsyncedCount,
+    persistence,
+  });
+  const persistenceMessage = persistenceNotice(persistence);
+  // Stated as a fraction rather than a bare count, so the group can see how
+  // much room is left before someone is turned away rather than discovering
+  // the ceiling by hitting it.
   const presenceText = participants > 0
-    ? `${participants} ${participants === 1 ? "person" : "people"} connected`
+    ? `${participants} of ${ROOM_CAPACITY} connected`
     : providerConnected
       ? "Confirming presence…"
       : "Not connected";
 
   return (
-    <main className={styles.shell}>
-      <header className={styles.header}>
+    <main className={styles.shell} id="main">
+      <header className={styles.header} inert={blocked ? true : undefined}>
         <div className={styles.brand}>
           <Link className={styles.brandLink} href="/" aria-label="PrivCircle home">PRIVCIRCLE</Link>
-          <span className={styles.roomName} title={`/${path}`}>/{path}</span>
+          <h1 className={styles.roomName} title={`/${path}`}>/{path}</h1>
         </div>
         <div className={styles.headerActions}>
           <span className={styles.presence} data-connected={participants > 0} aria-live="polite">
             <span className={styles.presenceDot} aria-hidden="true" />
             {presenceText}
           </span>
+          {/* Retention lived only in the desktop toolbar, so on a phone the
+              room never said how long it survives. */}
+          <span className={styles.retention}>{expirationLabel(metadata)}</span>
           <div className={styles.actionGroup}>
             <Button
               className={styles.filesButton}
@@ -414,26 +500,22 @@ export default function RealtimeEditor({
         </aside>
       ) : null}
 
-      <div className={styles.area} data-files-open={filesOpen}>
-        <div ref={editorHost} className={styles.host} />
-        {blocked ? (
-          <div className={styles.blocker} role="alert">
-            <section className={styles.blockerCard}>
-              <h1>{blocked === "full" ? "Room is full" : "Access expired"}</h1>
-              <p>
-                {blocked === "full"
-                  ? "This room is at its current participant limit. Try again after someone leaves."
-                  : "Your access can no longer be verified. Restart the room access flow to continue."}
-              </p>
-              <div className={styles.blockerActions}>
-                <Button type="button" onClick={blocked === "access" ? onAccessExpired : () => window.location.reload()}>
-                  {blocked === "access" ? "Restart access" : "Try again"}
-                </Button>
-                <Link className={styles.homeLink} href="/">Go home</Link>
-              </div>
-            </section>
-          </div>
-        ) : null}
+      {persistenceMessage ? (
+        <div className={styles.persistence} role="alert">
+          <span className={styles.persistenceIcon} aria-hidden="true">!</span>
+          <p>{persistenceMessage}</p>
+        </div>
+      ) : null}
+
+      <div className={styles.area} data-files-open={filesOpen} inert={blocked ? true : undefined}>
+        {/* When the files panel covers the editor there is nothing to see
+            behind it, but the editor stayed focusable and typeable — Tab moved
+            the caret into a document the reader could not look at. */}
+        <div
+          ref={editorHost}
+          className={styles.host}
+          inert={filesOpen && filesOverlay ? true : undefined}
+        />
         <DocumentsPanel
           path={path}
           open={filesOpen}
@@ -444,7 +526,26 @@ export default function RealtimeEditor({
         />
       </div>
 
-      <footer className={styles.toolbar}>
+      {blocked ? (
+        <div className={styles.blocker} role="alertdialog" aria-modal="true" aria-labelledby="room-blocked-title">
+          <section className={styles.blockerCard}>
+            <h2 id="room-blocked-title">{blocked === "full" ? "Room is full" : "Access expired"}</h2>
+            <p>
+              {blocked === "full"
+                ? `This room holds ${ROOM_CAPACITY} people at a time and every seat is taken. Try again once someone leaves.`
+                : "Your access can no longer be verified. Restart the room access flow to continue."}
+            </p>
+            <div className={styles.blockerActions}>
+              <Button type="button" autoFocus onClick={blocked === "access" ? onAccessExpired : () => window.location.reload()}>
+                {blocked === "access" ? "Restart access" : "Try again"}
+              </Button>
+              <Link className={styles.homeLink} href="/">Go home</Link>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <footer className={styles.toolbar} inert={blocked ? true : undefined}>
         <div className={styles.toolbarSection}>
           <Select
             className={styles.language}
@@ -457,7 +558,6 @@ export default function RealtimeEditor({
             placement="top"
             onValueChange={(value) => selectLanguage(value as LanguageId)}
           />
-          <span className={styles.roomKind}>{expirationLabel(metadata)}</span>
         </div>
 
         <div className={styles.toolbarSection}>
@@ -484,6 +584,9 @@ export default function RealtimeEditor({
               <Button variant="tool" type="button" aria-pressed={wrap} onClick={() => runOverflowAction(toggleWrap)}>Wrap {wrap ? "on" : "off"}</Button>
             </div>
           </details>
+          <span className={styles.keyboardHint} data-visible={editorFocused} aria-hidden="true">
+            Esc then Tab to leave the editor
+          </span>
           <span className={styles.connection} data-state={connection} role="status">
             {connectionLabel(connection)}
             <span className={styles.connectionDot} aria-hidden="true" />
@@ -491,6 +594,10 @@ export default function RealtimeEditor({
         </div>
       </footer>
 
+      <p className="sr-only" id={KEYBOARD_HINT_ID}>
+        Tab inserts an indent inside this editor. Press Escape and then Tab to
+        move focus to the toolbar.
+      </p>
       <p className="sr-only" role="status" aria-live="polite">{copyStatus}</p>
       {copyFallback ? (
         <div className={styles.fallback}>

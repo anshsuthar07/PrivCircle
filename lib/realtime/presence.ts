@@ -1,5 +1,6 @@
 import { getRedis } from "@/lib/redis";
 import { keys } from "@/lib/storage/keys";
+import { ROOM_CAPACITY } from "@/lib/types";
 
 const LEASE_MS = 75_000;
 
@@ -16,7 +17,7 @@ for _, member in ipairs(members) do
     participantCount = participantCount + 1
   end
 end
-if not seen[ARGV[2]] and participantCount >= 2 then
+if not seen[ARGV[2]] and participantCount >= tonumber(ARGV[5]) then
   return 0
 end
 redis.call('zadd', KEYS[1], ARGV[1] + ARGV[4], ARGV[2] .. ':' .. ARGV[3])
@@ -48,6 +49,7 @@ export async function claimParticipant(
     participantId,
     socketId,
     LEASE_MS,
+    ROOM_CAPACITY,
   );
   return Number(result) > 0;
 }

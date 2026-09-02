@@ -17,8 +17,8 @@ import { authorizationFailure } from "@/lib/documents/responses";
 import {
   createPendingDocument,
   deleteDocumentRow,
+  getRoomDocumentState,
   getRoomUsage,
-  listRoomDocuments,
 } from "@/lib/documents/store";
 import { noStoreJson, readSmallJson, serviceError } from "@/lib/http";
 import { enforceRateLimit, requestSubject } from "@/lib/security/rate-limit";
@@ -71,10 +71,7 @@ export async function GET(
       );
     }
 
-    const [documents, usage] = await Promise.all([
-      listRoomDocuments(authorization.room.id),
-      getRoomUsage(authorization.room.id),
-    ]);
+    const { documents, usage } = await getRoomDocumentState(authorization.room.id);
 
     // Room activity is a convenient moment to reclaim expired bytes. The
     // scheduled job stays the durable guarantee; this only narrows the window.
@@ -91,7 +88,7 @@ export async function GET(
       authorization.sessionToken,
     );
   } catch (error) {
-    return serviceError(error);
+    return serviceError(error, "documents.index");
   }
 }
 
@@ -228,6 +225,6 @@ export async function POST(
         { status: 400 },
       );
     }
-    return serviceError(error);
+    return serviceError(error, "documents.index");
   }
 }

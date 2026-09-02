@@ -42,6 +42,6 @@ export async function GET(request: NextRequest) {
     const result = await reclaimExpiredDocuments();
     return noStoreJson(result);
   } catch (error) {
-    return serviceError(error);
+    return serviceError(error, "cron.documents");
   }
 }

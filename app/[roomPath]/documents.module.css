@@ -295,3 +295,15 @@
     box-shadow: var(--shadow-elevated);
   }
 }
+
+/* The two-step removal control. Laid out in the same column as the single
+   Remove button so confirming does not shift the row it belongs to. */
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.confirm button:first-child {
+  color: var(--color-error);
+}

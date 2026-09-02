@@ -28,6 +28,11 @@ async function expectNoSeriousAxeViolations(page: import("@playwright/test").Pag
   expect(blocking).toEqual([]);
 }
 
+/** The footer carries the only links to the security page and the source. */
+async function footerIsVisible(page: import("@playwright/test").Page) {
+  return page.locator("footer").first().isVisible();
+}
+
 async function chooseOption(
   page: import("@playwright/test").Page,
   label: string,
@@ -80,8 +85,17 @@ for (const viewport of [
       };
     });
 
-    expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight);
+    // The property worth protecting is that the primary action is reachable
+    // without scrolling, not that the page never scrolls at all.
+    //
+    // This previously asserted zero scroll height, which held only because the
+    // footer — the sole route to the security page and the source — was hidden
+    // at short desktop heights. Deleting navigation to avoid a scrollbar is the
+    // worse failure of the two, so the footer stays and the page is allowed to
+    // extend past the fold in this worst-case form state (password expanded and
+    // the indefinite-retention warning shown).
     expect(geometry.ctaBottom).toBeLessThanOrEqual(geometry.clientHeight);
+    expect(await footerIsVisible(page)).toBe(true);
   });
 }
 

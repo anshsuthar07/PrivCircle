@@ -13,6 +13,37 @@ import { keys } from "./keys";
 
 const TOMBSTONE_SECONDS = 24 * 60 * 60;
 
+/**
+ * How long a Lifetime room may sit in the Redis cache without being touched.
+ *
+ * Lifetime rooms are durable in PostgreSQL; Redis is only a cache in front of
+ * it. Caching them with no expiry at all meant every Lifetime room ever created
+ * held its metadata *and* up to a 1 MiB snapshot in Redis permanently, which a
+ * small Redis plan cannot absorb. A bounded idle lifetime bounds that memory:
+ * `lookupRoom()` already rehydrates from PostgreSQL on a miss, and
+ * `loadDocument()` already falls back to the stored snapshot, so an evicted key
+ * costs one query and is transparent to the caller. Every read and write
+ * refreshes it, so an active room is never dropped mid-session.
+ */
+const LIFETIME_CACHE_SECONDS = 7 * 24 * 60 * 60;
+
+/** The hard ceiling on a room's Yjs snapshot. */
+export const MAX_DOCUMENT_STATE_BYTES = 1024 * 1024;
+
+/**
+ * Raised when a room's shared document outgrows its storage ceiling.
+ *
+ * This is deliberately its own type: the realtime layer has to tell the
+ * difference between "storage is broken, retry" and "this document can never be
+ * stored", because only the second one has to reach the people editing it.
+ */
+export class DocumentTooLargeError extends Error {
+  constructor(readonly byteLength: number) {
+    super("Document exceeds the 1 MiB room limit.");
+    this.name = "DocumentTooLargeError";
+  }
+}
+
 export type RoomLookup =
   | { status: "active"; room: RoomRecord }
   | { status: "expired" }
@@ -60,8 +91,8 @@ async function cacheLifetimeRoom(room: RoomRecord) {
   const redis = getRedis();
   await redis
     .multi()
-    .set(keys.path(room.path), room.id)
-    .set(keys.room(room.id), serializeRoom(room))
+    .set(keys.path(room.path), room.id, "EX", LIFETIME_CACHE_SECONDS)
+    .set(keys.room(room.id), serializeRoom(room), "EX", LIFETIME_CACHE_SECONDS)
     .exec();
 }
 
@@ -202,9 +233,14 @@ export async function createReservedRoom(input: {
 
       await redis
         .multi()
-        .set(keys.path(room.path), room.id)
-        .set(keys.room(room.id), serializeRoom(room))
-        .set(keys.document(room.id), Buffer.from(emptyDocument))
+        .set(keys.path(room.path), room.id, "EX", LIFETIME_CACHE_SECONDS)
+        .set(keys.room(room.id), serializeRoom(room), "EX", LIFETIME_CACHE_SECONDS)
+        .set(
+          keys.document(room.id),
+          Buffer.from(emptyDocument),
+          "EX",
+          LIFETIME_CACHE_SECONDS,
+        )
         .exec();
     } else {
       const ttl = EXPIRATION_SECONDS[input.expiration];
@@ -258,13 +294,20 @@ export async function loadDocument(room: RoomRecord) {
     .where(eq(lifetimeDocuments.roomId, room.id))
     .limit(1);
   const state = rows[0]?.state ?? null;
-  if (state) await redis.set(keys.document(room.id), Buffer.from(state));
+  if (state) {
+    await redis.set(
+      keys.document(room.id),
+      Buffer.from(state),
+      "EX",
+      LIFETIME_CACHE_SECONDS,
+    );
+  }
   return state;
 }
 
 export async function storeDocument(room: RoomRecord, state: Uint8Array) {
-  if (state.byteLength > 1024 * 1024) {
-    throw new Error("Document exceeds the 1 MiB room limit.");
+  if (state.byteLength > MAX_DOCUMENT_STATE_BYTES) {
+    throw new DocumentTooLargeError(state.byteLength);
   }
   const redis = getRedis();
   const now = new Date();
@@ -285,7 +328,12 @@ export async function storeDocument(room: RoomRecord, state: Uint8Array) {
           and(eq(lifetimeRooms.id, room.id), eq(lifetimeRooms.path, room.path)),
         );
     });
-    await redis.set(keys.document(room.id), Buffer.from(state));
+    await redis.set(
+      keys.document(room.id),
+      Buffer.from(state),
+      "EX",
+      LIFETIME_CACHE_SECONDS,
+    );
     return;
   }
 
@@ -302,8 +350,9 @@ export async function touchRoom(room: RoomRecord) {
   if (room.expiration === "lifetime") {
     await redis
       .multi()
-      .set(keys.path(room.path), room.id)
-      .set(keys.room(room.id), serializeRoom(room))
+      .set(keys.path(room.path), room.id, "EX", LIFETIME_CACHE_SECONDS)
+      .set(keys.room(room.id), serializeRoom(room), "EX", LIFETIME_CACHE_SECONDS)
+      .expire(keys.document(room.id), LIFETIME_CACHE_SECONDS)
       .exec();
     return;
   }

@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import { getDatabase } from "@/db";
-import { roomDocuments, type RoomDocumentRow } from "@/db/schema";
+import { lifetimeRooms, roomDocuments, type RoomDocumentRow } from "@/db/schema";
 import { DOCUMENT_TTL_SECONDS, UPLOAD_WINDOW_SECONDS } from "./config";
 
 /**
@@ -150,6 +150,33 @@ export async function listRoomDocuments(roomId: string): Promise<ActiveDocument[
   return rows.map(toActiveDocument);
 }
 
+/**
+ * Everything the files panel needs, in one round trip.
+ *
+ * Listing and quota were two separate queries over the same rows, run on every
+ * room open whether or not the panel was ever shown. They are the same
+ * predicate, so they are the same query.
+ */
+export async function getRoomDocumentState(roomId: string) {
+  const rows = await getDatabase()
+    .select()
+    .from(roomDocuments)
+    .where(and(eq(roomDocuments.roomId, roomId), activeFilter))
+    .orderBy(asc(roomDocuments.createdAt));
+
+  return {
+    documents: rows
+      .filter((row) => row.status === "ready")
+      .map(toActiveDocument),
+    // Quota counts in-flight uploads too, so a reservation cannot be exceeded
+    // by starting several at once.
+    usage: {
+      documents: rows.length,
+      bytes: rows.reduce((total, row) => total + Number(row.sizeBytes), 0),
+    },
+  };
+}
+
 /** Count and reserved bytes for a room, including in-flight uploads. */
 export async function getRoomUsage(roomId: string) {
   const rows = await getDatabase()
@@ -215,4 +242,56 @@ export async function expireDocumentNow(documentId: string) {
     .update(roomDocuments)
     .set({ expiresAt: sql`now()` })
     .where(eq(roomDocuments.id, documentId));
+}
+
+/**
+ * Rooms that still have live files, oldest activity first.
+ *
+ * Only rooms whose files have had time to settle are returned. A file uploaded
+ * seconds ago into a brand-new room must never be considered orphaned just
+ * because a lookup raced with room creation.
+ */
+export async function findRoomsWithLiveDocuments(limit: number, settleSeconds: number) {
+  return getDatabase()
+    .selectDistinct({ roomId: roomDocuments.roomId })
+    .from(roomDocuments)
+    .where(
+      and(
+        gt(roomDocuments.expiresAt, sql`now()`),
+        lte(
+          roomDocuments.createdAt,
+          sql`now() - make_interval(secs => ${settleSeconds})`,
+        ),
+      ),
+    )
+    .limit(limit);
+}
+
+/** Which of the given room ids are durable Lifetime rooms. */
+export async function findExistingLifetimeRoomIds(roomIds: string[]) {
+  if (roomIds.length === 0) return new Set<string>();
+  const rows = await getDatabase()
+    .select({ id: lifetimeRooms.id })
+    .from(lifetimeRooms)
+    .where(inArray(lifetimeRooms.id, roomIds));
+  return new Set(rows.map((row) => row.id));
+}
+
+/**
+ * Retires every live file belonging to the given rooms.
+ *
+ * Expiry is moved to the database clock rather than deleting rows, so the files
+ * stop being listable and downloadable immediately and the existing reclaim
+ * pass removes the bytes with all of its idempotency intact.
+ */
+export async function expireDocumentsForRooms(roomIds: string[]) {
+  if (roomIds.length === 0) return 0;
+  const rows = await getDatabase()
+    .update(roomDocuments)
+    .set({ expiresAt: sql`now()` })
+    .where(
+      and(inArray(roomDocuments.roomId, roomIds), gt(roomDocuments.expiresAt, sql`now()`)),
+    )
+    .returning({ id: roomDocuments.id });
+  return rows.length;
 }

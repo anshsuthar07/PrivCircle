@@ -53,7 +53,12 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
-        source: "/:roomPath",
+        // Constrained to the room path grammar, and explicitly not `security`.
+        // A bare `/:roomPath` also matched `/security`, `/robots.txt`, and
+        // `/sitemap.xml`, which pushed `noindex` and `no-store` onto the one
+        // page meant to be found and cached — a static trust page that was
+        // being re-rendered on every single request.
+        source: "/:roomPath((?!security$)[a-zA-Z0-9_-]{3,64})",
         headers: [
           { key: "Cache-Control", value: "private, no-store, max-age=0" },
           { key: "X-Robots-Tag", value: "noindex, nofollow" },

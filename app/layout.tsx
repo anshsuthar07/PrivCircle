@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -39,10 +39,28 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * `interactiveWidget: "resizes-content"` is what keeps the editor usable on a
+ * phone. The room is a full-height grid with a fixed toolbar; without this the
+ * on-screen keyboard overlays the layout instead of shrinking it, and the
+ * toolbar ends up underneath the keyboard exactly when someone is typing.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  interactiveWidget: "resizes-content",
+  colorScheme: "dark",
+};
+
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

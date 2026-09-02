@@ -15,39 +15,57 @@ import {
   releaseParticipant,
 } from "@/lib/realtime/presence";
 import { keys } from "@/lib/storage/keys";
+import { ROOM_CAPACITY } from "@/lib/types";
 import { createRoom, storeDocument } from "@/lib/storage/rooms";
 
 afterAll(() => getRedis().disconnect());
 
 describe("horizontally scaled realtime", () => {
-  it("keeps two-person leases alive atomically and rejects a third participant", async () => {
+  it("seats a whole group, counts people rather than sockets, and refuses one past the limit", async () => {
     const roomId = crypto.randomUUID();
-    const first = crypto.randomUUID();
-    const second = crypto.randomUUID();
-    const third = crypto.randomUUID();
-    const firstSocket = crypto.randomUUID();
+    const seats = Array.from({ length: ROOM_CAPACITY }, () => ({
+      participantId: crypto.randomUUID(),
+      socketId: crypto.randomUUID(),
+    }));
+    const first = seats[0];
+    // A reconnect arrives as a second socket for a participant who already has
+    // a seat, and must not cost the group one.
     const reconnectSocket = crypto.randomUUID();
-    const secondSocket = crypto.randomUUID();
+    const overflow = crypto.randomUUID();
 
     try {
-      await expect(claimParticipant(roomId, first, firstSocket)).resolves.toBe(true);
-      await expect(claimParticipant(roomId, first, reconnectSocket)).resolves.toBe(true);
-      await expect(claimParticipant(roomId, second, secondSocket)).resolves.toBe(true);
       await expect(
-        claimParticipant(roomId, third, crypto.randomUUID()),
+        claimParticipant(roomId, first.participantId, first.socketId),
+      ).resolves.toBe(true);
+      await expect(
+        claimParticipant(roomId, first.participantId, reconnectSocket),
+      ).resolves.toBe(true);
+
+      for (const seat of seats.slice(1)) {
+        await expect(
+          claimParticipant(roomId, seat.participantId, seat.socketId),
+          `participant ${seat.participantId} should fit within ${ROOM_CAPACITY}`,
+        ).resolves.toBe(true);
+      }
+
+      // One past the limit is refused by the script, not by the interface.
+      await expect(
+        claimParticipant(roomId, overflow, crypto.randomUUID()),
       ).resolves.toBe(false);
 
       await getRedis().pexpire(keys.presence(roomId), 250);
       await expect(
-        refreshParticipant(roomId, first, firstSocket),
+        refreshParticipant(roomId, first.participantId, first.socketId),
       ).resolves.toBe(true);
       expect(await getRedis().pttl(keys.presence(roomId))).toBeGreaterThan(100_000);
+
+      // A seat freed by someone leaving is immediately reusable.
+      const leaving = seats[seats.length - 1];
+      await releaseParticipant(roomId, leaving.participantId, leaving.socketId);
+      await expect(
+        claimParticipant(roomId, overflow, crypto.randomUUID()),
+      ).resolves.toBe(true);
     } finally {
-      await Promise.all([
-        releaseParticipant(roomId, first, firstSocket),
-        releaseParticipant(roomId, first, reconnectSocket),
-        releaseParticipant(roomId, second, secondSocket),
-      ]);
       await getRedis().del(keys.presence(roomId));
     }
   });

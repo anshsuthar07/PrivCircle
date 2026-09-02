@@ -18,8 +18,9 @@ export const dynamic = "force-dynamic";
  * Removes a document before it expires.
  *
  * Only the participant who uploaded it may do this. Everyone in the room can
- * read every file, but one participant cannot destroy another's, which matches
- * a two-person room where nothing else is destructive.
+ * read every file, but one participant cannot destroy another's — the larger
+ * the group, the more that matters, since nothing else in a room is
+ * destructive and there is no way to undo a removal.
  */
 export async function DELETE(
   request: NextRequest,
@@ -79,6 +80,6 @@ export async function DELETE(
 
     return withSession(noStoreJson({ removed: true }), authorization.sessionToken);
   } catch (error) {
-    return serviceError(error);
+    return serviceError(error, "documents.delete");
   }
 }

@@ -32,6 +32,6 @@ export async function GET(
     }
     return noStoreJson(await toSafeMetadata(lookup.room));
   } catch (error) {
-    return serviceError(error);
+    return serviceError(error, "rooms.metadata");
   }
 }

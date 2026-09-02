@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { ROOM_CAPACITY } from "@/lib/types";
 
 const runAddress = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 let ipCounter = 10;
@@ -86,7 +87,7 @@ test("protected room stays disconnected until auth and syncs two editors", async
   await second.getByLabel("Room password").fill("testing123!");
   await second.getByRole("button", { name: "Join room" }).click();
   await expect(second.locator(".cm-content")).toBeVisible();
-  await expect(first.getByText("2 people connected")).toBeVisible();
+  await expect(first.getByText(`2 of ${ROOM_CAPACITY} connected`)).toBeVisible();
   await expect(first.getByText("Room created — invite someone")).toHaveCount(0);
 
   await first.locator(".cm-content").click();
@@ -99,6 +100,9 @@ test("protected room stays disconnected until auth and syncs two editors", async
   await first.getByRole("button", { name: "Copy link" }).click();
   await expect(first.locator('.sr-only[role="status"]')).toContainText("Room link copied.");
 
+  // A room is a group, not a pair: a third participant joins and edits like
+  // anyone else. The seat ceiling itself is exercised against the Lua script in
+  // the unit tests, where filling a room does not cost a browser per person.
   const thirdContext = await browser.newContext({
     extraHTTPHeaders: { "x-forwarded-for": testClientIp() },
   });
@@ -106,7 +110,16 @@ test("protected room stays disconnected until auth and syncs two editors", async
   await third.goto(`/${path}`);
   await third.getByLabel("Room password").fill("testing123!");
   await third.getByRole("button", { name: "Join room" }).click();
-  await expect(third.getByRole("heading", { name: "Room is full" })).toBeVisible();
+  await expect(third.locator(".cm-content")).toBeVisible();
+  await expect(third.locator(".cm-content")).toContainText('const message = "hello";');
+  await expect(first.getByText(`3 of ${ROOM_CAPACITY} connected`)).toBeVisible();
+
+  // And their edits reach everyone already in the room.
+  await third.locator(".cm-content").click();
+  await third.keyboard.press("End");
+  await third.keyboard.type(" // from the third");
+  await expect(first.locator(".cm-content")).toContainText("// from the third");
+  await expect(second.locator(".cm-content")).toContainText("// from the third");
 
   await thirdContext.close();
   await guest.close();
@@ -122,7 +135,8 @@ test("unprotected room opens directly", async ({ page }) => {
   await page.locator(".create-form .primary-button").click();
   await expect(page).toHaveURL(new RegExp(`/${path}$`));
   await expect(page.locator(".cm-content")).toBeVisible();
-  await expect(page.getByText("1 person connected")).toBeVisible();
+  // Presence is a fraction so the remaining room is visible before it runs out.
+  await expect(page.getByText(`1 of ${ROOM_CAPACITY} connected`)).toBeVisible();
   await expect(page.getByText("Deletes 1 hour after everyone leaves")).toBeVisible();
 });
 
